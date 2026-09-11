@@ -1207,7 +1207,15 @@
     "installForAgent": {
       "button": "Install for Agent",
       "copied": "Agent prompt copied",
-      "prompt": "Follow {{guideUrl}} to connect SkillHub and install {{skill}} version {{version}} from this SkillHub."
+      "prompt": "Follow {{guideUrl}} to connect SkillHub and install {{skill}} version {{version}} from this SkillHub.",
+      "dialogTitle": "Install to a local Agent",
+      "dialogDescription": "Choose an Agent to install to. {{skill}} will be written into that Agent's skills directory.",
+      "installed": "Installed",
+      "installing": "Installing...",
+      "cancel": "Cancel",
+      "confirm": "Install",
+      "success": "Installed successfully",
+      "noAgents": "No local Agent detected. Please confirm the Tauri desktop client is installed."
     }
   },
   "skillCompare": {

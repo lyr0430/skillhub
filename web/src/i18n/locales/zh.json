@@ -1207,7 +1207,15 @@
     "installForAgent": {
       "button": "安装到 Agent",
       "copied": "安装指令已复制",
-      "prompt": "请根据 {{guideUrl}} 接入 SkillHub，并从该 SkillHub 安装 {{skill}} 的 {{version}} 版本。"
+      "prompt": "请根据 {{guideUrl}} 接入 SkillHub，并从该 SkillHub 安装 {{skill}} 的 {{version}} 版本。",
+      "dialogTitle": "安装到本地 Agent",
+      "dialogDescription": "选择要安装到的 Agent。安装将把 {{skill}} 写入该 Agent 的技能目录。",
+      "installed": "已安装",
+      "installing": "正在安装...",
+      "cancel": "取消",
+      "confirm": "安装",
+      "success": "安装成功",
+      "noAgents": "未检测到可用的本地 Agent，请确认已安装 Tauri 桌面客户端。"
     }
   },
   "skillCompare": {
