@@ -4,6 +4,7 @@ import { Check, Copy } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { useCopyToClipboard } from '@/shared/lib/clipboard'
+import { isTauri } from '@/shared/lib/tauri'
 import { resolvePublicRegistryUrl } from '@/shared/lib/registry-url'
 
 interface InstallCommandProps {
@@ -30,8 +31,16 @@ export function getBaseUrl(): string {
     return ''
   }
   const runtimeConfig = window.__SKILLHUB_RUNTIME_CONFIG__
+  const configuredUrl = runtimeConfig?.appBaseUrl?.trim()
+  // 桌面 Tauri 的 WebView origin（dev 前端 / tauri://）并不代表后端地址。
+  // 未配置 appBaseUrl 时回退到本地后端，确保安装/下载请求打到真正的 API 服务。
+  if (isTauri()) {
+    return configuredUrl && !configuredUrl.includes('localhost')
+      ? configuredUrl.replace(/\/+$/, '')
+      : 'http://localhost:8080'
+  }
   return resolvePublicRegistryUrl(
-    runtimeConfig?.appBaseUrl,
+    configuredUrl,
     `${window.location.protocol}//${window.location.host}`,
   )
 }

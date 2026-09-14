@@ -24,6 +24,18 @@ spring:
             client-secret: ${OAUTH2_GITHUB_CLIENT_SECRET:local-placeholder}
 
 skillhub:
+  storage:
+    provider: ${SKILLHUB_STORAGE_PROVIDER:s3}
+    local:
+      base-path: ${STORAGE_BASE_PATH:/tmp/skillhub-storage}
+    s3:
+      endpoint: ${SKILLHUB_STORAGE_S3_ENDPOINT:http://localhost:9000}
+      public-endpoint: ${SKILLHUB_STORAGE_S3_PUBLIC_ENDPOINT:http://localhost:9000}
+      bucket: ${SKILLHUB_STORAGE_S3_BUCKET:skillhub}
+      access-key: ${SKILLHUB_STORAGE_S3_ACCESS_KEY:minioadmin}
+      secret-key: ${SKILLHUB_STORAGE_S3_SECRET_KEY:minioadmin}
+      auto-create-bucket: ${SKILLHUB_STORAGE_S3_AUTO_CREATE_BUCKET:true}
+      force-path-style: ${SKILLHUB_STORAGE_S3_FORCE_PATH_STYLE:true}
   suite:
     review-writes-enabled: ${SKILLHUB_SUITE_REVIEW_WRITES_ENABLED:true}
   auth:

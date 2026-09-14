@@ -101,7 +101,7 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
     if !response.status().is_success() {
         return Err(InstallError::new(
             "download_failed",
-            format!("下载失败 (HTTP {})", response.status()),
+            format!("下载失败 (HTTP {}) — {}", response.status(), url),
         ));
     }
     let bytes = response.bytes().map_err(network_error)?;
