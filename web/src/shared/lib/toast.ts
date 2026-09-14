@@ -6,18 +6,22 @@ export const CENTER_TOASTER_ID = 'top-center'
 export function centeredToastOptions(options?: ExternalToast): ExternalToast {
   return {
     toasterId: CENTER_TOASTER_ID,
+    ...options,
     classNames: {
-      title: 'text-center font-semibold',
+      title: 'text-center',
       description: 'text-center',
+      content: 'w-full text-center',
       ...options?.classNames,
     },
-    ...options,
   }
 }
 
 function withDefaultToaster(options?: ExternalToast): ExternalToast {
   return {
     toasterId: CENTER_TOASTER_ID,
+    style:{
+      width:"300px",
+    },
     ...options,
   }
 }
@@ -38,7 +42,10 @@ function scheduleToast(run: () => void) {
 export const toast = {
   success: (message: string, description?: string, options?: ExternalToast) => {
     scheduleToast(() => {
-      sonnerToast.success(message, { description, ...withDefaultToaster(options) })
+      sonnerToast.success(message, { description,style:{
+        background:'rgba(236,253,243,1)',
+        color:'rgba(0,138,46,1)'
+      }, ...withDefaultToaster(options) })
     })
   },
   error: (message: string, description?: string, options?: ExternalToast) => {

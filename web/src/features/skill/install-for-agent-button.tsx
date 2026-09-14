@@ -161,7 +161,8 @@ export function InstallForAgentButton({
         t('skillDetail.installForAgent.installSuccess'),
         backupWarning ?? result.dir,
       )
-      setOpen(false)
+      // 保持弹窗打开，仅刷新每个 Agent 的安装状态。
+      await refreshStatus()
       setAction('idle')
     } catch (err) {
       setAction('idle')
@@ -191,9 +192,9 @@ export function InstallForAgentButton({
       if (result === null) return
       toast.success(
         t('skillDetail.installForAgent.uninstallSuccess'),
-        result.backupDir
-          ? t('skillDetail.installForAgent.uninstallBackup', { dir: result.backupDir })
-          : result.dir,
+        // result.backupDir
+        //   ? t('skillDetail.installForAgent.uninstallBackup', { dir: result.backupDir })
+        //   : result.dir,
       )
       // Refresh status so the agent no longer shows as installed.
       await refreshStatus()
@@ -260,7 +261,15 @@ export function InstallForAgentButton({
         </button>
 
         <Dialog open={open} onOpenChange={(next) => setOpen(next)}>
-          <DialogContent className="sm:max-w-xl">
+          <DialogContent
+            className="sm:w-[min(calc(100vw-2rem),38rem)]"
+            tabIndex={-1}
+            onOpenAutoFocus={(event) => {
+              // 阻止 Dialog 自动聚焦到第一个 agent 按钮（会触发它的 tooltip）。
+              event.preventDefault()
+              ;(event.currentTarget as HTMLElement).focus()
+            }}
+          >
             <DialogHeader>
               <DialogTitle>{t('skillDetail.installForAgent.dialogTitle')}</DialogTitle>
               <DialogDescription>
@@ -273,9 +282,6 @@ export function InstallForAgentButton({
             <TooltipProvider delayDuration={150}>
               <div className="flex flex-wrap items-center justify-center gap-3 py-2">
                 {agents.map((agent) => {
-                  if (action !== 'idle') {
-                    return null
-                  }
                   const selected = selectedId === agent.id
                   const isInstalled = Boolean(agent.installedVersion)
                   return (
@@ -284,6 +290,7 @@ export function InstallForAgentButton({
                         <button
                           type="button"
                           data-testid={`install-target-${agent.id}`}
+                          disabled={action !== 'idle'}
                           onClick={() => setSelectedId(agent.id)}
                           aria-pressed={selected}
                           aria-label={agent.name}
@@ -337,29 +344,23 @@ export function InstallForAgentButton({
               </div>
             </TooltipProvider>
 
-            {action !== 'idle' && (
-              <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {action === 'uninstalling'
-                  ? t('skillDetail.installForAgent.uninstalling')
-                  : t('skillDetail.installForAgent.installing')}
-              </div>
-            )}
-
             <div className="flex items-center justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 {t('skillDetail.installForAgent.cancel')}
               </Button>
 
-              {selectedInstalled && action === 'idle' && (
+              {selectedInstalled && (
                 <>
                   <Button
                     type="button"
                     variant="outline"
                     data-testid="install-uninstall"
+                    disabled={action !== 'idle'}
                     onClick={() => setConfirmUninstall(true)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {action === 'uninstalling'
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Trash2 className="h-4 w-4" />}
                     {t('skillDetail.installForAgent.uninstall')}
                   </Button>
                   {selectedAgent?.outdated && (
@@ -367,9 +368,12 @@ export function InstallForAgentButton({
                       type="button"
                       variant="outline"
                       data-testid="install-update"
+                      disabled={action !== 'idle'}
                       onClick={handleInstallClick}
                     >
-                      <RefreshCw className="h-4 w-4" />
+                      {action === 'installing'
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <RefreshCw className="h-4 w-4" />}
                       {t('skillDetail.installForAgent.update')}
                     </Button>
                   )}
@@ -383,6 +387,11 @@ export function InstallForAgentButton({
                   disabled={!selectedId || action !== 'idle'}
                   onClick={handleInstallClick}
                 >
+                  {action === 'installing'
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : selectedAgent?.outdated
+                      ? <RefreshCw className="h-4 w-4" />
+                      : null}
                   {selectedAgent?.outdated
                     ? t('skillDetail.installForAgent.update')
                     : t('skillDetail.installForAgent.confirm')}

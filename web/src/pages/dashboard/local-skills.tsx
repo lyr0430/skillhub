@@ -77,9 +77,9 @@ export function LocalSkillsPage() {
       if (result === null) return
       toast.success(
         t('localSkills.uninstallSuccess'),
-        result.backupDir
-          ? t('localSkills.uninstallBackup', { dir: result.backupDir })
-          : result.dir,
+        // result.backupDir
+        //   ? t('localSkills.uninstallBackup', { dir: result.backupDir })
+        //   : result.dir,
       )
       await refresh()
     } catch (err) {
