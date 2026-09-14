@@ -20,6 +20,7 @@
     "mySuites": "My Suites",
     "publish": "Publish",
     "suites": "Skill Suites",
+    "localSkills": "Local Skills",
     "login": "Login"
   },
   "landing": {
@@ -219,9 +220,18 @@
         "copied": "Copied",
         "copyErrorTitle": "Copy failed",
         "modes": {
-          "agent": { "title": "Agent integration", "description": "Configure the Registry once and discover skills as needed" },
-          "cli": { "title": "CLI", "description": "Search, install, and publish skills" },
-          "web": { "title": "Web interface", "description": "Browse, read, and download skills visually" }
+          "agent": {
+            "title": "Agent integration",
+            "description": "Configure the Registry once and discover skills as needed"
+          },
+          "cli": {
+            "title": "CLI",
+            "description": "Search, install, and publish skills"
+          },
+          "web": {
+            "title": "Web interface",
+            "description": "Browse, read, and download skills visually"
+          }
         },
         "agent": {
           "tablist": "Agent integration demo",
@@ -234,12 +244,19 @@
           "instructionSuffix": "and follow it to configure the SkillHub Skills Registry.",
           "copyInstruction": "Copy instruction",
           "copyErrorDescription": "Select and copy the Registry setup instruction manually.",
-          "steps": { "read": "Read the guide", "configure": "Configure Registry", "discover": "Discover skills on demand" },
+          "steps": {
+            "read": "Read the guide",
+            "configure": "Configure Registry",
+            "discover": "Discover skills on demand"
+          },
           "prompt": "What is the weather in Hefei today?",
           "discovery": {
-            "intentTitle": "Identify the task", "intentDescription": "Real-time weather and travel advice are needed",
-            "searchTitle": "Search SkillHub Registry", "searchDescription": "Match @global/weather · v1.3.0",
-            "readTitle": "Read skill instructions", "readDescription": "Confirm the input and invocation contract"
+            "intentTitle": "Identify the task",
+            "intentDescription": "Real-time weather and travel advice are needed",
+            "searchTitle": "Search SkillHub Registry",
+            "searchDescription": "Match @global/weather · v1.3.0",
+            "readTitle": "Read skill instructions",
+            "readDescription": "Confirm the input and invocation contract"
           },
           "answerLead": "Hefei is cloudy today, 26°C",
           "answerTail": ", with possible brief showers this afternoon. Carrying rain gear is recommended."
@@ -253,12 +270,21 @@
           "docs": "CLI docs"
         },
         "web": {
-          "marketplace": "Skill marketplace", "publicSkills": "Public skills", "search": "Search skills",
-          "status": "Public · Available", "summary": "Real-time weather, forecasts, and travel information",
-          "download": "Download ZIP", "readTitle": "Read before using",
+          "marketplace": "Skill marketplace",
+          "publicSkills": "Public skills",
+          "search": "Search skills",
+          "status": "Public · Available",
+          "summary": "Real-time weather, forecasts, and travel information",
+          "download": "Download ZIP",
+          "readTitle": "Read before using",
           "readDescription": "Review the purpose, inputs, and execution instructions in SKILL.md before downloading the complete package.",
-          "version": "Version", "files": "Files", "format": "Format",
-          "browse": "Browse and search", "preview": "Content preview", "versions": "Files and versions", "favorites": "Stars and subscriptions"
+          "version": "Version",
+          "files": "Files",
+          "format": "Format",
+          "browse": "Browse and search",
+          "preview": "Content preview",
+          "versions": "Files and versions",
+          "favorites": "Stars and subscriptions"
         }
       }
     }
@@ -471,6 +497,7 @@
     "notifications": "Notifications",
     "skillsAndData": "Skills & Data",
     "mySkills": "My Skills",
+    "localSkills": "Local Skills",
     "publish": "Publish",
     "namespaces": "Namespaces",
     "stars": "My Stars",
@@ -494,6 +521,34 @@
     "profileDesc": "Edit your display name and personal info",
     "security": "Security",
     "securityDesc": "Change password and account security options"
+  },
+  "localSkills": {
+    "title": "Local Skills",
+    "subtitle": "Manage skills installed to your local Agents",
+    "desktopOnly": "This page is only available in the Tauri desktop client. Please install and open the desktop app.",
+    "empty": "No local skills installed yet.",
+    "loadError": "Failed to read installed local skills",
+    "agent": "{{agent}}",
+    "version": "Version {{version}}",
+    "uninstall": "Uninstall",
+    "uninstallSuccess": "Uninstalled successfully",
+    "uninstallError": "Uninstall failed",
+    "update": "Update",
+    "updateSuccess": "Updated successfully",
+    "updateError": "Update failed",
+    "alreadyLatest": "Already the latest version",
+    "confirmUninstallTitle": "Confirm uninstall",
+    "confirmUninstallDesc": "Uninstall @{{skill}} from {{agent}}? The skill and its local directory will be removed.",
+    "uninstallConfirm": "Uninstall",
+    "cancel": "Cancel",
+    "copyPath": "Copy directory path",
+    "pathCopied": "Directory path copied",
+    "copyError": "Copy failed",
+    "searchPlaceholder": "Search installed skills...",
+    "noResults": "No matching skills.",
+    "uninstallBackup": "The original directory was not installed from this registry; it was backed up to {{dir}}",
+    "openInFolder": "Open in folder",
+    "openInFolderError": "Failed to open folder"
   },
   "mySkills": {
     "title": "My Skills",
@@ -1211,11 +1266,28 @@
       "dialogTitle": "Install to a local Agent",
       "dialogDescription": "Choose an Agent to install to. {{skill}} will be written into that Agent's skills directory.",
       "installed": "Installed",
+      "installSuccess": "Installed successfully",
+      "installError": "Install failed",
+      "uninstallSuccess": "Uninstalled successfully",
+      "uninstallError": "Uninstall failed",
+      "installedVersion": "Installed version {{version}}",
+      "notInstalled": "Not installed",
+      "loadError": "Failed to detect local Agent status",
       "installing": "Installing...",
+      "uninstalling": "Uninstalling...",
       "cancel": "Cancel",
       "confirm": "Install",
-      "success": "Installed successfully",
-      "noAgents": "No local Agent detected. Please confirm the Tauri desktop client is installed."
+      "uninstall": "Uninstall",
+      "update": "Update",
+      "confirmUninstallTitle": "Confirm uninstall",
+      "confirmUninstallDesc": "Uninstall @{{skill}} from {{agent}}?",
+      "uninstallConfirm": "Uninstall",
+      "noAgents": "No local Agent detected. Please confirm the Tauri desktop client is installed.",
+      "uninstallBackup": "The original directory was not installed from this registry; it was backed up to {{dir}}",
+      "conflictTitle": "A same-named local directory exists",
+      "conflictDesc": "@{{skill}} already exists under {{agent}} but was not installed from this registry. Overwrite it, or back it up before installing?",
+      "overwrite": "Overwrite",
+      "backupAndInstall": "Back up and install"
     }
   },
   "skillCompare": {

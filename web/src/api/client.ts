@@ -301,6 +301,27 @@ export function buildApiUrl(path: string): string {
   return prependApiBaseUrl(baseUrl, path)
 }
 
+/** The resolved (latest, or pinned) version for a skill, from the portal resolve endpoint. */
+export interface ResolvedSkillVersion {
+  namespace?: string
+  slug?: string
+  version?: string
+  versionId?: number
+  fingerprint?: string
+  matched?: boolean
+  downloadUrl?: string
+}
+
+/**
+ * Resolve the latest published version of a skill. Used by the local-skills
+ * management page to detect whether an installed skill can be upgraded.
+ */
+export async function resolveSkillVersion(namespace: string, slug: string): Promise<ResolvedSkillVersion> {
+  const cleanNamespace = encodeURIComponent(namespace)
+  const cleanSlug = encodeURIComponent(slug)
+  return fetchJson<ResolvedSkillVersion>(`/api/v1/skills/${cleanNamespace}/${cleanSlug}/resolve`)
+}
+
 function prependApiBaseUrl(baseUrl: string, path: string): string {
   const normalizedBaseUrl = trimTrailingSlash(baseUrl)
   const normalizedPath = path.startsWith('/') ? path : `/${path}`

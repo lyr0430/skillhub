@@ -26,6 +26,11 @@ pub struct AgentProfile {
 /// Virtual `generic` is the "default global skill location" (`.agents/skills`).
 pub const AGENT_PROFILES: &[AgentProfile] = &[
     AgentProfile {
+        id: "generic",
+        name: "默认全局 Skill 位置",
+        user_skills: ".agents/skills",
+    },
+    AgentProfile {
         id: "claude-code",
         name: "Claude Code",
         user_skills: ".claude/skills",
@@ -45,11 +50,7 @@ pub const AGENT_PROFILES: &[AgentProfile] = &[
         name: "OpenClaw",
         user_skills: ".openclaw/skills",
     },
-    AgentProfile {
-        id: "generic",
-        name: "默认全局 Skill 位置",
-        user_skills: ".agents/skills",
-    },
+    
 ];
 
 /// Resolve the user home directory.

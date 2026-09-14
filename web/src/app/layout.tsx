@@ -8,6 +8,7 @@ import { LanguageSwitcher } from '@/shared/components/language-switcher'
 import { ThemeToggle } from '@/shared/components/theme-toggle'
 import { UserMenu } from '@/shared/components/user-menu'
 import { NotificationBell } from '@/features/notification/notification-bell'
+import { isTauri } from '@/shared/lib/tauri'
 import { dismissOpenOverlays } from '@/shared/lib/dismiss-open-overlays'
 import { syncDocumentLanguage } from '@/shared/lib/document-language'
 import { DashboardSidebar, SIDEBAR_GROUPS } from '@/pages/dashboard'
@@ -86,6 +87,10 @@ export function Layout() {
     { label: t('nav.publish'), to: '/dashboard/publish', auth: true },
     { label: t('nav.search'), to: '/search' },
     { label: t('nav.suites', { defaultValue: '技能套件' }), to: '/suites' },
+    // 本地技能只能在 Tauri 桌面客户端中使用，web 端不展示该入口。
+    ...(isTauri()
+      ? [{ label: t('nav.localSkills', { defaultValue: '本地技能' }), to: '/local-skills' }]
+      : []),
     { label: t('nav.dashboard'), to: '/dashboard', auth: true },
     { label: t('nav.mySkills'), to: '/dashboard/skills', auth: true },
     { label: t('nav.mySuites'), to: '/dashboard/suites', auth: true },
@@ -221,7 +226,7 @@ export function Layout() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 mt-auto border-t bg-secondary/70" style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* <footer className="relative z-10 mt-auto border-t bg-secondary/70" style={{ borderColor: 'hsl(var(--border))' }}>
         <div className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-16">
           <div className="grid grid-cols-2 gap-8 md:grid-cols-5">
             <div className="col-span-2 md:col-span-1">
@@ -274,7 +279,7 @@ export function Layout() {
             <span>{t('footer.copyright')}</span>
           </div>
         </div>
-      </footer>
+      </footer> */}
     </div>
   )
 }

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::installer::agents::{display_path, find_agent, skill_dir, validate_slug};
 use crate::installer::error::{io_error, network_error, not_found, zip_error, InstallError};
+use crate::installer::metadata::{backup_dir, has_metadata, write_metadata, InstalledMetadata};
 
 /// Result of a single install, returned to the web view.
 #[derive(Debug, serde::Serialize)]
@@ -24,6 +25,10 @@ pub struct InstallInput {
     /// Optional absolute override directory; when present it wins over the
     /// agent-derived directory (mirrors `--dir` in the CLI).
     pub dir: Option<String>,
+    /// When a same-named non-skillhub directory already exists, `true` backs it
+    /// up before installing, `false` overwrites it in place. Defaults to false.
+    #[serde(default)]
+    pub preserve_existing: bool,
 }
 
 /// Build the absolute download URL for a skill version zip.
@@ -120,9 +125,23 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
     let effective = flatten_single_root(&tmp_dir);
 
     if target_dir.exists() {
-        // Replace any previous install of this slug for the target agent.
-        fs::remove_dir_all(&target_dir).map_err(|e| io_error("替换已有安装", &e))?;
-        warnings.push("已覆盖该目录下已有的同名 skill".to_string());
+        if has_metadata(&target_dir) {
+            // A skillhub-managed install is replaced in place.
+            fs::remove_dir_all(&target_dir).map_err(|e| io_error("替换已有安装", &e))?;
+            warnings.push("已覆盖该目录下已有的同名 skill".to_string());
+        } else if input.preserve_existing {
+            // Back up the non-skillhub (likely user-authored) directory, then
+            // install, so its contents are not lost.
+            let backup = backup_dir(&target_dir)?;
+            warnings.push(format!(
+                "该目录下已有同名但非本仓库安装的 skill，原目录已备份到：{}",
+                backup.display()
+            ));
+        } else {
+            // User chose to overwrite the non-skillhub directory in place.
+            fs::remove_dir_all(&target_dir).map_err(|e| io_error("覆盖已有同名目录", &e))?;
+            warnings.push("已覆盖该目录下同名但非本仓库安装的 skill".to_string());
+        }
     }
     fs::rename(&effective, &target_dir).map_err(|e| io_error("移动安装目录", &e))?;
 
@@ -130,6 +149,13 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
     if tmp_dir.exists() {
         let _ = fs::remove_dir_all(&tmp_dir);
     }
+
+    // Record install metadata so the desktop client (and CLI) can detect the
+    // installed version and support uninstall/upgrade later.
+    write_metadata(
+        &target_dir,
+        &InstalledMetadata::new(registry, &input.namespace, &input.slug, &input.version),
+    )?;
 
     Ok(InstallResult {
         ok: true,

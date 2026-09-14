@@ -20,6 +20,7 @@
     "mySuites": "我的套件",
     "publish": "发布",
     "suites": "技能套件",
+    "localSkills": "本地技能",
     "login": "登录"
   },
   "landing": {
@@ -219,9 +220,18 @@
         "copied": "已复制",
         "copyErrorTitle": "复制失败",
         "modes": {
-          "agent": { "title": "Agent 自动接入", "description": "配置一次 Registry，按需发现技能" },
-          "cli": { "title": "CLI 命令行", "description": "搜索、获取和发布技能" },
-          "web": { "title": "Web 界面", "description": "可视化浏览、阅读并下载技能" }
+          "agent": {
+            "title": "Agent 自动接入",
+            "description": "配置一次 Registry，按需发现技能"
+          },
+          "cli": {
+            "title": "CLI 命令行",
+            "description": "搜索、获取和发布技能"
+          },
+          "web": {
+            "title": "Web 界面",
+            "description": "可视化浏览、阅读并下载技能"
+          }
         },
         "agent": {
           "tablist": "Agent 接入演示",
@@ -234,12 +244,19 @@
           "instructionSuffix": "，并按照说明完成 SkillHub Skills Registry 的配置。",
           "copyInstruction": "复制指令",
           "copyErrorDescription": "请手动选择并复制这条 Registry 配置指令。",
-          "steps": { "read": "读取文档", "configure": "配置 Registry", "discover": "按需发现技能" },
+          "steps": {
+            "read": "读取文档",
+            "configure": "配置 Registry",
+            "discover": "按需发现技能"
+          },
           "prompt": "帮我查下合肥今天的天气",
           "discovery": {
-            "intentTitle": "识别任务意图", "intentDescription": "需要实时天气与出行建议",
-            "searchTitle": "检索 SkillHub Registry", "searchDescription": "匹配 @global/weather · v1.3.0",
-            "readTitle": "读取技能说明", "readDescription": "确认输入格式和调用方式"
+            "intentTitle": "识别任务意图",
+            "intentDescription": "需要实时天气与出行建议",
+            "searchTitle": "检索 SkillHub Registry",
+            "searchDescription": "匹配 @global/weather · v1.3.0",
+            "readTitle": "读取技能说明",
+            "readDescription": "确认输入格式和调用方式"
           },
           "answerLead": "合肥今天多云，26°C",
           "answerTail": "，下午可能有短时阵雨，外出建议携带雨具。"
@@ -253,12 +270,21 @@
           "docs": "CLI 文档"
         },
         "web": {
-          "marketplace": "技能市场", "publicSkills": "公开技能", "search": "搜索技能",
-          "status": "公开 · 可用", "summary": "查询实时天气、未来预报和出行信息",
-          "download": "下载 ZIP", "readTitle": "先阅读，再使用",
+          "marketplace": "技能市场",
+          "publicSkills": "公开技能",
+          "search": "搜索技能",
+          "status": "公开 · 可用",
+          "summary": "查询实时天气、未来预报和出行信息",
+          "download": "下载 ZIP",
+          "readTitle": "先阅读，再使用",
           "readDescription": "阅读 SKILL.md 中的用途、输入要求和执行方式，确认适合当前任务后再获取完整技能包。",
-          "version": "版本", "files": "文件", "format": "格式",
-          "browse": "浏览与搜索", "preview": "内容预览", "versions": "文件与版本", "favorites": "收藏和订阅"
+          "version": "版本",
+          "files": "文件",
+          "format": "格式",
+          "browse": "浏览与搜索",
+          "preview": "内容预览",
+          "versions": "文件与版本",
+          "favorites": "收藏和订阅"
         }
       }
     }
@@ -451,7 +477,7 @@
     "viewSubscriptions": "查看我的订阅",
     "mySkillsTitle": "我的技能",
     "openMySkills": "查看我的技能",
-    "mySkillsPreviewDescription": "展示最近的 5 个技能，可进入详情或前往\u201C我的技能\u201D查看全部。",
+    "mySkillsPreviewDescription": "展示最近的 5 个技能，可进入详情或前往“我的技能”查看全部。",
     "mySkillsPreviewEmpty": "你还没有发布任何技能",
     "credentials": "访问凭证",
     "openTokens": "查看 API Tokens",
@@ -471,6 +497,7 @@
     "notifications": "通知设置",
     "skillsAndData": "技能与数据",
     "mySkills": "我的技能",
+    "localSkills": "本地技能",
     "publish": "技能发布",
     "namespaces": "命名空间",
     "stars": "我的收藏",
@@ -494,6 +521,34 @@
     "profileDesc": "编辑你的展示名称和个人信息",
     "security": "安全设置",
     "securityDesc": "修改密码和账户安全选项"
+  },
+  "localSkills": {
+    "title": "本地技能",
+    "subtitle": "管理已安装到本地 Agent 的技能",
+    "desktopOnly": "此页面仅在 Tauri 桌面客户端中可用，请安装并打开桌面应用。",
+    "empty": "还没有安装任何本地技能。",
+    "loadError": "读取本地已安装技能失败",
+    "agent": "{{agent}}",
+    "version": "版本 {{version}}",
+    "uninstall": "卸载",
+    "uninstallSuccess": "卸载成功",
+    "uninstallError": "卸载失败",
+    "update": "更新",
+    "updateSuccess": "更新成功",
+    "updateError": "更新失败",
+    "alreadyLatest": "已是最新版本",
+    "confirmUninstallTitle": "确认卸载",
+    "confirmUninstallDesc": "确定要从 {{agent}} 卸载 @{{skill}} 吗？该技能及其本地目录将被删除。",
+    "uninstallConfirm": "确认卸载",
+    "cancel": "取消",
+    "copyPath": "复制目录路径",
+    "pathCopied": "目录路径已复制",
+    "copyError": "复制失败",
+    "searchPlaceholder": "搜索已安装技能...",
+    "noResults": "没有匹配的技能。",
+    "uninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}",
+    "openInFolder": "在文件夹中打开",
+    "openInFolderError": "打开文件夹失败"
   },
   "mySkills": {
     "title": "我的技能",
@@ -1211,11 +1266,28 @@
       "dialogTitle": "安装到本地 Agent",
       "dialogDescription": "选择要安装到的 Agent。安装将把 {{skill}} 写入该 Agent 的技能目录。",
       "installed": "已安装",
+      "installSuccess": "安装成功",
+      "installError": "安装失败",
+      "uninstallSuccess": "卸载成功",
+      "uninstallError": "卸载失败",
+      "installedVersion": "已安装版本 {{version}}",
+      "notInstalled": "未安装",
+      "loadError": "检测本地 Agent 状态失败",
       "installing": "正在安装...",
+      "uninstalling": "正在卸载...",
       "cancel": "取消",
       "confirm": "安装",
-      "success": "安装成功",
-      "noAgents": "未检测到可用的本地 Agent，请确认已安装 Tauri 桌面客户端。"
+      "uninstall": "卸载",
+      "update": "更新",
+      "confirmUninstallTitle": "确认卸载",
+      "confirmUninstallDesc": "确定要从 {{agent}} 卸载 @{{skill}} 吗？",
+      "uninstallConfirm": "确认卸载",
+      "noAgents": "未检测到可用的本地 Agent，请确认已安装 Tauri 桌面客户端。",
+      "uninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}",
+      "conflictTitle": "检测到同名本地目录",
+      "conflictDesc": "@{{skill}} 在 {{agent}} 的目录下已存在同名但非本仓库安装的 skill，是否覆盖或备份后安装？",
+      "overwrite": "直接覆盖",
+      "backupAndInstall": "备份并安装"
     }
   },
   "skillCompare": {

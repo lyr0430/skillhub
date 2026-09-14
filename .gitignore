@@ -93,3 +93,10 @@ charts/skillhub/charts/*.tgz
 
 # Local config file
 .mcp.json
+
+# Harness Suite
+.claude
+docs
+openspec
+.harness-suite-tmp
+my-harness-suite-main

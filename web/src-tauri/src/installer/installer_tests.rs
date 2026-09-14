@@ -146,4 +146,132 @@ mod tests {
         let home = home_dir();
         assert!(!home.as_os_str().is_empty());
     }
+
+    #[test]
+    fn metadata_write_and_read_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("skillhub-meta-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let meta = crate::installer::metadata::InstalledMetadata::new(
+            "https://skill.example.com",
+            "global",
+            "my-skill",
+            "1.2.3",
+        );
+        crate::installer::metadata::write_metadata(&dir, &meta).unwrap();
+        assert!(crate::installer::metadata::metadata_path(&dir).exists());
+
+        let status = crate::installer::metadata::detect_status(
+            &dir,
+            "claude-code",
+            "my-skill",
+            Some("1.2.3"),
+        )
+        .unwrap();
+        assert!(status.installed);
+        assert_eq!(status.version, "1.2.3");
+        assert!(!status.outdated);
+
+        // A different requested version marks it outdated.
+        let status2 = crate::installer::metadata::detect_status(
+            &dir,
+            "claude-code",
+            "my-skill",
+            Some("2.0.0"),
+        )
+        .unwrap();
+        assert!(status2.installed);
+        assert!(status2.outdated);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_status_reports_not_installed_without_metadata() {
+        let dir = std::env::temp_dir().join(format!("skillhub-meta-none-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let status =
+            crate::installer::metadata::detect_status(&dir, "codex", "s", Some("1.0.0")).unwrap();
+        assert!(!status.installed);
+        assert!(status.version.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn uninstall_dir_backs_up_a_manual_skill() {
+        let dir =
+            std::env::temp_dir().join(format!("skillhub-uninstall-manual-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("references")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "# manual skill").unwrap();
+
+        // A dir without metadata (manual skill) is backed up, not deleted.
+        let outcome = crate::installer::metadata::uninstall_dir(&dir).unwrap();
+        let backup = PathBuf::from(outcome.backup_dir.unwrap());
+        assert!(!dir.exists(), "original dir should be renamed away");
+        assert!(backup.exists());
+        assert!(backup.join("SKILL.md").exists());
+
+        let _ = std::fs::remove_dir_all(&backup);
+    }
+
+    #[test]
+    fn uninstall_dir_removes_a_skillhub_skill() {
+        let dir =
+            std::env::temp_dir().join(format!("skillhub-uninstall-managed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::installer::metadata::write_metadata(
+            &dir,
+            &crate::installer::metadata::InstalledMetadata::new(
+                "https://skill.example.com",
+                "global",
+                "my-skill",
+                "1.0.0",
+            ),
+        )
+        .unwrap();
+
+        // A skillhub-installed dir (has metadata) is removed directly.
+        let outcome = crate::installer::metadata::uninstall_dir(&dir).unwrap();
+        assert!(outcome.backup_dir.is_none());
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn scan_agent_skills_lists_installed_and_skips_plain_dirs() {
+        let root = std::env::temp_dir().join(format!("skillhub-scan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        // A skillhub-installed skill (has metadata).
+        let skill_dir = root.join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        crate::installer::metadata::write_metadata(
+            &skill_dir,
+            &crate::installer::metadata::InstalledMetadata::new(
+                "https://skill.example.com",
+                "global",
+                "my-skill",
+                "1.2.3",
+            ),
+        )
+        .unwrap();
+
+        // A plain directory without metadata must be skipped.
+        let plain = root.join("not-a-skill");
+        std::fs::create_dir_all(&plain).unwrap();
+
+        let skills = crate::installer::metadata::scan_agent_skills("claude-code", &root);
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].slug, "my-skill");
+        assert_eq!(skills[0].version, "1.2.3");
+        assert_eq!(skills[0].agent, "claude-code");
+        assert!(skills[0].dir.ends_with("my-skill"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

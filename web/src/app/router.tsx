@@ -100,6 +100,7 @@ const dashboardRouteOptions = { silentFallback: true } satisfies LazyRouteOption
 
 const DashboardPage = createLazyRouteComponent(() => import('@/pages/dashboard'), 'DashboardPage', dashboardRouteOptions)
 const MySkillsPage = createLazyRouteComponent(() => import('@/pages/dashboard/my-skills'), 'MySkillsPage', dashboardRouteOptions)
+const LocalSkillsPage = createLazyRouteComponent(() => import('@/pages/dashboard/local-skills'), 'LocalSkillsPage', dashboardRouteOptions)
 const PublishPage = createLazyRouteComponent(() => import('@/pages/dashboard/publish'), 'PublishPage', dashboardRouteOptions)
 const SuiteCreatePage = createLazyRouteComponent(
   () => import('@/pages/dashboard/suite-editor'),
@@ -342,6 +343,12 @@ const dashboardSkillsRoute = createRoute({
     filter: typeof search.filter === 'string' && search.filter ? search.filter : undefined,
   }),
   component: MySkillsPage,
+})
+
+const dashboardLocalSkillsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/local-skills',
+  component: LocalSkillsPage,
 })
 
 const dashboardPublishRoute = createRoute({
@@ -609,6 +616,7 @@ const routeTree = rootRoute.addChildren([
   skillVersionCompareRoute,
   dashboardRoute,
   dashboardSkillsRoute,
+  dashboardLocalSkillsRoute,
   dashboardPublishRoute,
   dashboardSuitesRoute,
   dashboardSuiteCreateRoute,
