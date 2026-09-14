@@ -13,6 +13,7 @@
     "landing": "首页",
     "home": "技能中心",
     "search": "搜索",
+    "marketplace": "技能市场",
     "skillDetail": "技能详情",
     "explore": "探索",
     "dashboard": "控制台",
@@ -20,8 +21,8 @@
     "mySuites": "我的套件",
     "publish": "发布",
     "suites": "技能套件",
-    "localSkills": "本地技能",
-    "login": "登录"
+    "login": "登录",
+    "localSkills": "本地技能"
   },
   "landing": {
     "hero": {
@@ -497,7 +498,7 @@
     "notifications": "通知设置",
     "skillsAndData": "技能与数据",
     "mySkills": "我的技能",
-    "localSkills": "本地技能",
+    "mySuites": "我的套件",
     "publish": "技能发布",
     "namespaces": "命名空间",
     "stars": "我的收藏",
@@ -506,11 +507,14 @@
     "reviewProgress": "我的审核进度",
     "admin": "管理员",
     "governance": "审核与治理",
-    "reports": "举报管理"
+    "reports": "举报管理",
+    "localSkills": "本地技能"
   },
   "overview": {
     "mySkills": "我的技能",
     "mySkillsDesc": "查看和管理你发布的所有技能",
+    "mySuites": "我的套件",
+    "mySuitesDesc": "查看和管理你的技能套件",
     "publish": "技能发布",
     "publishDesc": "上传并发布新的技能到平台",
     "tokens": "Token 凭证",
@@ -521,34 +525,6 @@
     "profileDesc": "编辑你的展示名称和个人信息",
     "security": "安全设置",
     "securityDesc": "修改密码和账户安全选项"
-  },
-  "localSkills": {
-    "title": "本地技能",
-    "subtitle": "管理已安装到本地 Agent 的技能",
-    "desktopOnly": "此页面仅在 Tauri 桌面客户端中可用，请安装并打开桌面应用。",
-    "empty": "还没有安装任何本地技能。",
-    "loadError": "读取本地已安装技能失败",
-    "agent": "{{agent}}",
-    "version": "版本 {{version}}",
-    "uninstall": "卸载",
-    "uninstallSuccess": "卸载成功",
-    "uninstallError": "卸载失败",
-    "update": "更新",
-    "updateSuccess": "更新成功",
-    "updateError": "更新失败",
-    "alreadyLatest": "已是最新版本",
-    "confirmUninstallTitle": "确认卸载",
-    "confirmUninstallDesc": "确定要从 {{agent}} 卸载 @{{skill}} 吗？该技能及其本地目录将被删除。",
-    "uninstallConfirm": "确认卸载",
-    "cancel": "取消",
-    "copyPath": "复制目录路径",
-    "pathCopied": "目录路径已复制",
-    "copyError": "复制失败",
-    "searchPlaceholder": "搜索已安装技能...",
-    "noResults": "没有匹配的技能。",
-    "uninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}",
-    "openInFolder": "在文件夹中打开",
-    "openInFolderError": "打开文件夹失败"
   },
   "mySkills": {
     "title": "我的技能",
@@ -1638,6 +1614,7 @@
     "menu": {
       "dashboard": "控制台",
       "mySkills": "我的技能",
+      "mySuites": "我的套件",
       "myNamespaces": "我的命名空间",
       "governance": "治理中心",
       "stars": "我的收藏",
@@ -2111,5 +2088,33 @@
       "VERSION_UNAVAILABLE": "版本不可用",
       "VISIBILITY_INCOMPATIBLE": "可见性不兼容"
     }
+  },
+  "localSkills": {
+    "title": "本地技能",
+    "subtitle": "管理已安装到本地 Agent 的技能",
+    "desktopOnly": "此页面仅在 Tauri 桌面客户端中可用，请安装并打开桌面应用。",
+    "empty": "还没有安装任何本地技能。",
+    "loadError": "读取本地已安装技能失败",
+    "agent": "{{agent}}",
+    "version": "版本 {{version}}",
+    "uninstall": "卸载",
+    "uninstallSuccess": "卸载成功",
+    "uninstallError": "卸载失败",
+    "update": "更新",
+    "updateSuccess": "更新成功",
+    "updateError": "更新失败",
+    "alreadyLatest": "已是最新版本",
+    "confirmUninstallTitle": "确认卸载",
+    "confirmUninstallDesc": "确定要从 {{agent}} 卸载 @{{skill}} 吗？该技能及其本地目录将被删除。",
+    "uninstallConfirm": "确认卸载",
+    "cancel": "取消",
+    "copyPath": "复制目录路径",
+    "pathCopied": "目录路径已复制",
+    "copyError": "复制失败",
+    "searchPlaceholder": "搜索已安装技能...",
+    "noResults": "没有匹配的技能。",
+    "uninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}",
+    "openInFolder": "在文件夹中打开",
+    "openInFolderError": "打开文件夹失败"
   }
 }

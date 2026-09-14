@@ -125,6 +125,12 @@
       "version": "1.0.0",
       "url": "https://bjcdn.openstorage.cn/open_res/xfyundoc/2026-07-31/0170ce8f-ad41-4819-bc50-9b572b1c6510/skillhub-builtin-skills/weather/1.0.0/181e36c0fd6ca5f6cdf224276dd12e0fd203f83456a988a6bcf15cc4f3c20dd6.zip",
       "sha256": "181e36c0fd6ca5f6cdf224276dd12e0fd203f83456a988a6bcf15cc4f3c20dd6"
+    },
+    {
+      "slug": "zero-slop",
+      "version": "2.10.2",
+      "url": "https://bjcdn.openstorage.cn/open_res/xfyundoc/2026-09-10/2abb2bab-737c-479e-9c79-d153a140e30b/1789010150588/d84fea7cd1ee53f6582889c89877d9423c1a79b419553f4626e7ab6409da10b0.zip",
+      "sha256": "d84fea7cd1ee53f6582889c89877d9423c1a79b419553f4626e7ab6409da10b0"
     }
   ]
 }

@@ -3,7 +3,6 @@ import { Outlet, Link, useRouterState } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Menu, X } from 'lucide-react'
 import { useAuth } from '@/features/auth/use-auth'
-import { BrandMark } from '@/shared/components/brand-mark'
 import { LanguageSwitcher } from '@/shared/components/language-switcher'
 import { ThemeToggle } from '@/shared/components/theme-toggle'
 import { UserMenu } from '@/shared/components/user-menu'
@@ -15,8 +14,6 @@ import { DashboardSidebar, SIDEBAR_GROUPS } from '@/pages/dashboard'
 import { canViewGovernanceCenter } from '@/shared/lib/governance-access'
 import { getAppHeaderClassName } from './layout-header-style'
 import { getAppMainContentLayout, resolveAppMainContentPathname } from './layout-main-content'
-
-const FOOTER_LINK_CLASS_NAME = 'group relative inline-flex py-0.5 transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-secondary after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:origin-left after:scale-x-0 after:bg-foreground/60 after:transition-transform after:duration-200 hover:after:scale-x-100 motion-reduce:after:transition-none'
 
 /**
  * Application shell shared by all routed pages.
@@ -85,15 +82,13 @@ export function Layout() {
   }> = [
     { label: t('nav.landing'), to: '/', exact: true },
     { label: t('nav.publish'), to: '/dashboard/publish', auth: true },
-    { label: t('nav.search'), to: '/search' },
-    { label: t('nav.suites', { defaultValue: '技能套件' }), to: '/suites' },
+    { label: t('nav.marketplace'), to: '/search' },
+    { label: t('nav.suites'), to: '/suites' },
     // 本地技能只能在 Tauri 桌面客户端中使用，web 端不展示该入口。
     ...(isTauri()
       ? [{ label: t('nav.localSkills', { defaultValue: '本地技能' }), to: '/local-skills' }]
       : []),
     { label: t('nav.dashboard'), to: '/dashboard', auth: true },
-    { label: t('nav.mySkills'), to: '/dashboard/skills', auth: true },
-    { label: t('nav.mySuites'), to: '/dashboard/suites', auth: true },
   ]
 
   const isActive = (to: string, exact?: boolean) => {

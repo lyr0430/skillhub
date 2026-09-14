@@ -13,6 +13,7 @@
     "landing": "Home",
     "home": "Skill Center",
     "search": "Search",
+    "marketplace": "Skill Marketplace",
     "skillDetail": "Skill Detail",
     "explore": "Explore Skills",
     "dashboard": "Dashboard",
@@ -20,8 +21,8 @@
     "mySuites": "My Suites",
     "publish": "Publish",
     "suites": "Skill Suites",
-    "localSkills": "Local Skills",
-    "login": "Login"
+    "login": "Login",
+    "localSkills": "Local Skills"
   },
   "landing": {
     "hero": {
@@ -497,7 +498,7 @@
     "notifications": "Notifications",
     "skillsAndData": "Skills & Data",
     "mySkills": "My Skills",
-    "localSkills": "Local Skills",
+    "mySuites": "My Suites",
     "publish": "Publish",
     "namespaces": "Namespaces",
     "stars": "My Stars",
@@ -506,11 +507,14 @@
     "reviewProgress": "Review Progress",
     "admin": "Admin",
     "governance": "Governance",
-    "reports": "Reports"
+    "reports": "Reports",
+    "localSkills": "Local Skills"
   },
   "overview": {
     "mySkills": "My Skills",
     "mySkillsDesc": "View and manage all your published skills",
+    "mySuites": "My Suites",
+    "mySuitesDesc": "View and manage your skill suites",
     "publish": "Publish",
     "publishDesc": "Upload and publish a new skill",
     "tokens": "API Tokens",
@@ -521,34 +525,6 @@
     "profileDesc": "Edit your display name and personal info",
     "security": "Security",
     "securityDesc": "Change password and account security options"
-  },
-  "localSkills": {
-    "title": "Local Skills",
-    "subtitle": "Manage skills installed to your local Agents",
-    "desktopOnly": "This page is only available in the Tauri desktop client. Please install and open the desktop app.",
-    "empty": "No local skills installed yet.",
-    "loadError": "Failed to read installed local skills",
-    "agent": "{{agent}}",
-    "version": "Version {{version}}",
-    "uninstall": "Uninstall",
-    "uninstallSuccess": "Uninstalled successfully",
-    "uninstallError": "Uninstall failed",
-    "update": "Update",
-    "updateSuccess": "Updated successfully",
-    "updateError": "Update failed",
-    "alreadyLatest": "Already the latest version",
-    "confirmUninstallTitle": "Confirm uninstall",
-    "confirmUninstallDesc": "Uninstall @{{skill}} from {{agent}}? The skill and its local directory will be removed.",
-    "uninstallConfirm": "Uninstall",
-    "cancel": "Cancel",
-    "copyPath": "Copy directory path",
-    "pathCopied": "Directory path copied",
-    "copyError": "Copy failed",
-    "searchPlaceholder": "Search installed skills...",
-    "noResults": "No matching skills.",
-    "uninstallBackup": "The original directory was not installed from this registry; it was backed up to {{dir}}",
-    "openInFolder": "Open in folder",
-    "openInFolderError": "Failed to open folder"
   },
   "mySkills": {
     "title": "My Skills",
@@ -1639,6 +1615,7 @@
     "menu": {
       "dashboard": "Dashboard",
       "mySkills": "My Skills",
+      "mySuites": "My Suites",
       "myNamespaces": "My Namespaces",
       "governance": "Governance Center",
       "stars": "Starred",
@@ -2112,5 +2089,33 @@
       "VERSION_UNAVAILABLE": "Version unavailable",
       "VISIBILITY_INCOMPATIBLE": "Visibility incompatible"
     }
+  },
+  "localSkills": {
+    "title": "Local Skills",
+    "subtitle": "Manage skills installed to your local Agents",
+    "desktopOnly": "This page is only available in the Tauri desktop client. Please install and open the desktop app.",
+    "empty": "No local skills installed yet.",
+    "loadError": "Failed to read installed local skills",
+    "agent": "{{agent}}",
+    "version": "Version {{version}}",
+    "uninstall": "Uninstall",
+    "uninstallSuccess": "Uninstalled successfully",
+    "uninstallError": "Uninstall failed",
+    "update": "Update",
+    "updateSuccess": "Updated successfully",
+    "updateError": "Update failed",
+    "alreadyLatest": "Already the latest version",
+    "confirmUninstallTitle": "Confirm uninstall",
+    "confirmUninstallDesc": "Uninstall @{{skill}} from {{agent}}? The skill and its local directory will be removed.",
+    "uninstallConfirm": "Uninstall",
+    "cancel": "Cancel",
+    "copyPath": "Copy directory path",
+    "pathCopied": "Directory path copied",
+    "copyError": "Copy failed",
+    "searchPlaceholder": "Search installed skills...",
+    "noResults": "No matching skills.",
+    "uninstallBackup": "The original directory was not installed from this registry; it was backed up to {{dir}}",
+    "openInFolder": "Open in folder",
+    "openInFolderError": "Failed to open folder"
   }
 }
