@@ -1263,7 +1263,8 @@
       "conflictTitle": "A same-named local directory exists",
       "conflictDesc": "@{{skill}} already exists under {{agent}} but was not installed from this registry. Overwrite it, or back it up before installing?",
       "overwrite": "Overwrite",
-      "backupAndInstall": "Back up and install"
+      "backupAndInstall": "Back up and install",
+      "symlinkNotice": "This location is a symlink. The update writes to the directory it points at; the link itself is left unchanged."
     }
   },
   "skillCompare": {
@@ -2106,7 +2107,7 @@
     "updateError": "Update failed",
     "alreadyLatest": "Already the latest version",
     "confirmUninstallTitle": "Confirm uninstall",
-    "confirmUninstallDesc": "Uninstall @{{skill}} from {{agent}}? The skill and its local directory will be removed.",
+    "confirmUninstallDesc": "Remove this installation of {{skill}}?",
     "uninstallConfirm": "Uninstall",
     "cancel": "Cancel",
     "copyPath": "Copy directory path",
@@ -2116,6 +2117,30 @@
     "noResults": "No matching skills.",
     "uninstallBackup": "The original directory was not installed from this registry; it was backed up to {{dir}}",
     "openInFolder": "Open in folder",
-    "openInFolderError": "Failed to open folder"
+    "openInFolderError": "Failed to open folder",
+    "allAgents": "All",
+    "originManaged": "Installed here",
+    "originUnmanaged": "Local / third-party",
+    "brokenLink": "Broken link",
+    "unreadable": "Unreadable",
+    "openHomepage": "Open source link",
+    "openHomepageError": "Failed to open link",
+    "homepageFromAuthor": "Source: declared by the skill author",
+    "homepageFromMetadata": "Source: recorded on this machine",
+    "homepageFromRegistry": "Source: SkillHub skill page",
+    "metadataSlugMismatch": "Directory name differs from metadata; published as {{slug}}",
+    "kindSymlink": "symlink",
+    "kindBroken": "broken",
+    "kindForeign": "unusual link",
+    "cleanupLink": "Remove link",
+    "noUpdateUnmanaged": "Not installed from this registry, so there is no source to update from.",
+    "noUpdateUnmanagedShort": "No update",
+    "effectSymlink": "Only the link is removed. The real skill directory at {{path}} is untouched.",
+    "effectBroken": "The broken link is removed. No files are deleted.",
+    "effectDir": "The skill directory is deleted; a directory not installed from this registry is renamed to {{name}}.skillhub-backup-* instead.",
+    "chooseLocation": "Choose the location to remove",
+    "uninstallLinkKept": "Real directory kept at {{path}}",
+    "symlinkTooltip": "Symlinked — updates and removal act on the real directory at {{path}}",
+    "symlinkBadgeCount": "{{count}} symlinks"
   }
 }

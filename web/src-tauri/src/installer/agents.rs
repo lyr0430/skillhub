@@ -50,7 +50,6 @@ pub const AGENT_PROFILES: &[AgentProfile] = &[
         name: "OpenClaw",
         user_skills: ".openclaw/skills",
     },
-    
 ];
 
 /// Resolve the user home directory.

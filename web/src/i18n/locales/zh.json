@@ -1263,7 +1263,8 @@
       "conflictTitle": "检测到同名本地目录",
       "conflictDesc": "@{{skill}} 在 {{agent}} 的目录下已存在同名但非本仓库安装的 skill，是否覆盖或备份后安装？",
       "overwrite": "直接覆盖",
-      "backupAndInstall": "备份并安装"
+      "backupAndInstall": "备份并安装",
+      "symlinkNotice": "该位置是软链接，更新会写入它指向的真实目录，链接本身不会被改动。"
     }
   },
   "skillCompare": {
@@ -2105,7 +2106,7 @@
     "updateError": "更新失败",
     "alreadyLatest": "已是最新版本",
     "confirmUninstallTitle": "确认卸载",
-    "confirmUninstallDesc": "确定要从 {{agent}} 卸载 @{{skill}} 吗？该技能及其本地目录将被删除。",
+    "confirmUninstallDesc": "确定要移除 {{skill}} 的这一处安装吗？",
     "uninstallConfirm": "确认卸载",
     "cancel": "取消",
     "copyPath": "复制目录路径",
@@ -2115,6 +2116,30 @@
     "noResults": "没有匹配的技能。",
     "uninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}",
     "openInFolder": "在文件夹中打开",
-    "openInFolderError": "打开文件夹失败"
+    "openInFolderError": "打开文件夹失败",
+    "allAgents": "全部",
+    "originManaged": "本仓库安装",
+    "originUnmanaged": "本地/第三方",
+    "brokenLink": "失效链接",
+    "unreadable": "无法读取",
+    "openHomepage": "打开来源地址",
+    "openHomepageError": "打开链接失败",
+    "homepageFromAuthor": "来源：技能作者声明",
+    "homepageFromMetadata": "来源：本机记录",
+    "homepageFromRegistry": "来源：SkillHub 技能页",
+    "metadataSlugMismatch": "目录名与元数据不一致，发布坐标为 {{slug}}",
+    "kindSymlink": "软链接",
+    "kindBroken": "链接已失效",
+    "kindForeign": "非常规链接",
+    "cleanupLink": "清理链接",
+    "noUpdateUnmanaged": "该技能不是本仓库安装的，缺少来源信息，无法更新。",
+    "noUpdateUnmanagedShort": "不可更新",
+    "effectSymlink": "仅移除链接本身，真实技能目录 {{path}} 不受影响。",
+    "effectBroken": "移除这个失效的链接，不会删除任何文件。",
+    "effectDir": "将删除该技能目录；若不是本仓库安装的，会先备份为 {{name}}.skillhub-backup-* 而不是直接删除。",
+    "chooseLocation": "选择要移除的位置",
+    "uninstallLinkKept": "真实目录仍在：{{path}}",
+    "symlinkTooltip": "这是软链接，更新与卸载都作用于其真实目录：{{path}}",
+    "symlinkBadgeCount": "{{count}} 处软链接"
   }
 }

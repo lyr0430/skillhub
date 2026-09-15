@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::installer::error::{io_error, InstallError};
+use crate::installer::link::LocationKind;
 
 /// The on-disk sub-directory (relative to a skill install dir) where skillhub
 /// records install metadata. Mirrors the CLI's `.skillhub/metadata.json` so the
@@ -15,7 +16,10 @@ const METADATA_FILE: &str = "metadata.json";
 /// `InstalledSkillMetadata` (schema version 1, source "skillhub").
 ///
 /// Field names are intentionally camelCase to match the CLI's on-disk JSON
-/// contract (see `cli/src/services/installed-skill-metadata.ts`).
+/// contract (see `cli/src/services/installed-skill-metadata.ts`). The CLI also
+/// writes `versionId` / `fingerprint` / `files`, which this struct does not
+/// model — [`write_metadata`] preserves those keys verbatim rather than
+/// dropping them on rewrite.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct InstalledMetadata {
@@ -27,6 +31,11 @@ pub struct InstalledMetadata {
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installedAt: Option<String>,
+    /// Optional out-of-band homepage for skills whose `SKILL.md` carries none.
+    /// Read-only for now — nothing writes it yet, but the field is reserved so
+    /// an installer that does record one stays forward-compatible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
 }
 
 impl InstalledMetadata {
@@ -39,6 +48,7 @@ impl InstalledMetadata {
             version: version.to_string(),
             source: "skillhub".to_string(),
             installedAt: None,
+            homepage: None,
         }
     }
 }
@@ -49,22 +59,51 @@ pub fn metadata_path(install_dir: &Path) -> PathBuf {
 }
 
 /// Write metadata into `install_dir/.skillhub/metadata.json`.
+///
+/// Fields already present in the file that this struct does not model (the
+/// CLI's `versionId`, `fingerprint`, `files`, `agent`) are read back and
+/// re-emitted. Both clients share this file, so a plain overwrite here would
+/// silently strip the CLI's bookkeeping every time the desktop client updates a
+/// skill.
 pub fn write_metadata(
     install_dir: &Path,
     metadata: &InstalledMetadata,
 ) -> Result<(), InstallError> {
     let dir = install_dir.join(METADATA_DIR);
     fs::create_dir_all(&dir).map_err(|e| io_error("创建 .skillhub 目录", &e))?;
-    let content = serde_json::to_vec_pretty(metadata)
+
+    let mut merged = read_raw_metadata(install_dir).unwrap_or_default();
+    let known = serde_json::to_value(metadata)
+        .map_err(|e| InstallError::new("metadata_serialize", format!("序列化元数据失败: {e}")))?;
+    let serde_json::Value::Object(known) = known else {
+        return Err(InstallError::new(
+            "metadata_serialize",
+            "序列化元数据失败: 结果不是对象",
+        ));
+    };
+    for (key, value) in known {
+        merged.insert(key, value);
+    }
+
+    let content = serde_json::to_vec_pretty(&serde_json::Value::Object(merged))
         .map_err(|e| InstallError::new("metadata_serialize", format!("序列化元数据失败: {e}")))?;
     fs::write(metadata_path(install_dir), content).map_err(|e| io_error("写入元数据", &e))?;
     Ok(())
 }
 
+/// Read the raw metadata object, unparsed, so unknown keys survive a rewrite.
+fn read_raw_metadata(install_dir: &Path) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let content = fs::read_to_string(metadata_path(install_dir)).ok()?;
+    match serde_json::from_str::<serde_json::Value>(&content).ok()? {
+        serde_json::Value::Object(map) => Some(map),
+        _ => None,
+    }
+}
+
 /// Read metadata from an install dir, if present and valid.
 ///
 /// Returns `Ok(None)` when the skill is not installed by skillhub (no metadata).
-fn read_metadata(install_dir: &Path) -> Result<Option<InstalledMetadata>, InstallError> {
+pub fn read_metadata(install_dir: &Path) -> Result<Option<InstalledMetadata>, InstallError> {
     let path = metadata_path(install_dir);
     if !path.exists() {
         return Ok(None);
@@ -83,24 +122,29 @@ pub struct SkillStatus {
     pub version: String,
     /// Whether the installed version differs from the requested one.
     pub outdated: bool,
-    /// True when the skill dir exists but carries no skillhub metadata (a
-    /// manually-placed skill). The client should ask the user before replacing
-    /// or deleting such a directory.
+    /// True when the skill entry exists but carries no usable skillhub
+    /// metadata (a manually-placed or third-party skill). The client should ask
+    /// the user before replacing or deleting it.
     pub unmanaged: bool,
+    /// How the entry exists on disk, when it does at all. Distinguishes a real
+    /// directory from a symlink, and a symlink whose target has gone away.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<LocationKind>,
 }
 
 /// Determine the status of a skill at `install_dir` against an optional
-/// `requested_version`. When metadata is absent but the directory exists, the
-/// skill is reported as `installed: false` with `unmanaged: true` (a directory
-/// that exists from a manual copy, which we cannot manage but should not
-/// silently delete).
+/// `requested_version`.
+///
+/// Existence is judged with `symlink_metadata` rather than `Path::exists`: the
+/// latter follows links, so a dangling symlink would be reported as "not
+/// installed" and leave the user with no clue that a broken entry is sitting in
+/// their skills directory.
 pub fn detect_status(
     install_dir: &Path,
-    agent_id: &str,
-    slug: &str,
     requested_version: Option<&str>,
 ) -> Result<SkillStatus, InstallError> {
-    let _ = (agent_id, slug);
+    let kind = crate::installer::link::classify(install_dir).ok();
+
     match read_metadata(install_dir)? {
         Some(meta) => {
             let outdated = requested_version
@@ -111,21 +155,32 @@ pub fn detect_status(
                 version: meta.version,
                 outdated,
                 unmanaged: false,
+                kind,
             })
         }
         None => Ok(SkillStatus {
             installed: false,
             version: String::new(),
             outdated: false,
-            unmanaged: install_dir.exists(),
+            unmanaged: kind.is_some(),
+            kind,
         }),
     }
 }
 
-/// True when `install_dir` carries skillhub install metadata, i.e. the skill was
-/// installed by (and is manageable by) skillhub rather than placed manually.
+/// True when `install_dir` carries skillhub install metadata we can actually
+/// read, i.e. the skill was installed by (and is manageable by) skillhub rather
+/// than placed manually or by another tool.
+///
+/// Deliberately not `metadata_path(..).exists()`. A truncated, hand-edited, or
+/// half-written `metadata.json` means we cannot tell what this directory is, and
+/// the only safe answer is "not ours". Existence-checking instead of
+/// parsing-checking is what would let a corrupt file turn a directory the UI
+/// promises to back up into one that gets deleted outright — and it is the only
+/// definition of "managed" in the crate, so the scan, the uninstall path, and
+/// the install-over-existing path cannot drift apart.
 pub fn has_metadata(install_dir: &Path) -> bool {
-    metadata_path(install_dir).exists()
+    matches!(read_metadata(install_dir), Ok(Some(_)))
 }
 
 /// Rename a non-skillhub directory to a sibling backup so its contents are not
@@ -149,85 +204,4 @@ pub(crate) fn backup_dir(install_dir: &Path) -> Result<PathBuf, InstallError> {
 
     fs::rename(install_dir, &candidate).map_err(|e| io_error("备份原 skill 目录", &e))?;
     Ok(candidate)
-}
-
-/// Outcome of removing a skill install dir.
-///
-/// `backup_dir` is `Some(path)` when a non-skillhub directory (a manually-placed
-/// skill) was preserved by renaming it, `None` when the dir was deleted in place
-/// (a skillhub-installed skill).
-#[derive(Debug)]
-pub struct UninstallOutcome {
-    pub backup_dir: Option<String>,
-}
-
-/// Remove a skill install dir (and its `.skillhub` metadata).
-///
-/// If the directory exists but was NOT installed by skillhub (no metadata, e.g.
-/// a manually-placed skill), it is backed up (renamed) rather than deleted so
-/// the user's content is not lost.
-pub fn uninstall_dir(install_dir: &Path) -> Result<UninstallOutcome, InstallError> {
-    if !install_dir.exists() {
-        return Err(InstallError::new(
-            "not_installed",
-            "该 skill 未安装，无法卸载",
-        ));
-    }
-
-    if has_metadata(install_dir) {
-        fs::remove_dir_all(install_dir).map_err(|e| io_error("卸载失败", &e))?;
-        Ok(UninstallOutcome { backup_dir: None })
-    } else {
-        let backup = backup_dir(install_dir)?;
-        Ok(UninstallOutcome {
-            backup_dir: Some(backup.to_string_lossy().into_owned()),
-        })
-    }
-}
-
-/// A locally installed skill discovered by scanning an agent's skill root.
-#[derive(Debug, Serialize)]
-pub struct InstalledSkill {
-    pub registry: String,
-    pub namespace: String,
-    pub slug: String,
-    pub version: String,
-    pub agent: String,
-    pub dir: String,
-}
-
-/// Scan an agent's skills root for skillhub-installed skills (those carrying
-/// `.skillhub/metadata.json`). Returns the installed skill records.
-///
-/// We scan the immediate sub-directories of `skills_root` rather than reading a
-/// central inventory, so the desktop client stays consistent with whatever the
-/// CLI/agents actually have on disk without a separate bookkeeping file.
-pub fn scan_agent_skills(agent_id: &str, skills_root: &Path) -> Vec<InstalledSkill> {
-    let mut skills = Vec::new();
-    let Ok(entries) = fs::read_dir(skills_root) else {
-        return skills;
-    };
-
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        let slug = match entry.file_name().into_string() {
-            Ok(name) => name,
-            Err(_) => continue,
-        };
-        if let Ok(Some(meta)) = read_metadata(&dir) {
-            skills.push(InstalledSkill {
-                registry: meta.registry,
-                namespace: meta.namespace,
-                slug,
-                version: meta.version,
-                agent: agent_id.to_string(),
-                dir: dir.to_string_lossy().into_owned(),
-            });
-        }
-    }
-
-    skills
 }

@@ -23,7 +23,8 @@ pub fn run() {
             commands::list_installed_skills,
             commands::install_skill_command,
             commands::uninstall_skill_command,
-            commands::open_directory
+            commands::open_directory,
+            commands::open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running the SkillHub desktop application");

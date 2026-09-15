@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InstallForAgentButton, buildAgentInstallPrompt } from './install-for-agent-button'
+import type { AgentSkillStatus } from './tauri-installer'
 
 // Stable `t` handler so it stays referentially equal across renders (real
 // react-i18next returns a stable `t`; an inline arrow would loop the effect dep).
@@ -27,14 +28,27 @@ const hoisted = vi.hoisted(() => {
   // already installed (with an outdated version) so the update path is testable;
   // generic has a same-named non-skillhub dir (unmanaged) so the conflict prompt
   // is testable.
-  const statuses = [
+  const defaultStatuses: AgentSkillStatus[] = [
     { agent: 'claude-code', installed: true, version: '1.0.0', outdated: true, unmanaged: false },
     { agent: 'generic', installed: false, version: '', outdated: false, unmanaged: true },
   ]
+  // Mutable so a test can swap in a different per-agent shape; restored in
+  // afterEach so one test's fixture cannot leak into the next.
+  const statuses = [...defaultStatuses]
   const toastSuccess = vi.fn()
   const toastError = vi.fn()
   const installArgs: Array<Record<string, unknown>> = []
-  return { state, agents, statuses, toastSuccess, toastError, installArgs }
+  const uninstallArgs: Array<Record<string, unknown>> = []
+  return {
+    state,
+    agents,
+    statuses,
+    defaultStatuses,
+    toastSuccess,
+    toastError,
+    installArgs,
+    uninstallArgs,
+  }
 })
 
 // Tauri runtime detection + installer are mocked so the desktop path is testable.
@@ -56,6 +70,7 @@ vi.mock('@/shared/lib/tauri', () => ({
       })
     }
     if (cmd === 'uninstall_skill_command') {
+      hoisted.uninstallArgs.push(args ?? {})
       return Promise.resolve({
         ok: true,
         data: { ok: true, dir: '/home/u/.claude/skills/my-skill', agent: args?.agent },
@@ -93,6 +108,8 @@ describe('install-for-agent-button', () => {
     hoisted.toastSuccess.mockClear()
     hoisted.toastError.mockClear()
     hoisted.installArgs.length = 0
+    hoisted.uninstallArgs.length = 0
+    hoisted.statuses = [...hoisted.defaultStatuses]
     hoisted.state.isTauri = false
     window.__SKILLHUB_RUNTIME_CONFIG__ = originalRuntimeConfig
   })
@@ -227,6 +244,41 @@ describe('install-for-agent-button', () => {
         expect(hoisted.toastSuccess).toHaveBeenCalled()
       })
       expect(queryByTestId('confirm-install-uninstall')).toBeNull()
+
+      // The entry is addressed by its own path so Rust can resolve a symlink
+      // to the real directory rather than acting on the link path.
+      expect(hoisted.uninstallArgs[0]).toMatchObject({
+        dir: '/home/u/.claude/skills/my-skill',
+        agent: 'claude-code',
+      })
+    })
+
+    it('warns that a symlinked install is updated at its target', async () => {
+      // claude-code's entry is a symlink: the files live elsewhere and the
+      // link must survive the update.
+      hoisted.statuses = [
+        {
+          agent: 'claude-code',
+          installed: true,
+          version: '1.0.0',
+          outdated: true,
+          unmanaged: false,
+          kind: 'symlink',
+        },
+      ]
+
+      const { getByTestId, getByText } = render(createElement(InstallForAgentButton, {
+        namespace: 'global',
+        slug: 'my-skill',
+        version: '1.2.3',
+      }))
+
+      await act(async () => fireEvent.click(getByTestId('install-for-agent-button')))
+      await waitFor(() => expect(getByTestId('install-target-claude-code')).toBeTruthy())
+
+      await waitFor(() =>
+        expect(getByText('skillDetail.installForAgent.symlinkNotice')).toBeTruthy(),
+      )
     })
 
     it('asks to refactor or back up before installing over a non-skillhub dir', async () => {

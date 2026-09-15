@@ -35,6 +35,7 @@ import {
   installSkill,
   uninstallSkill,
   type AgentTarget,
+  type LocationKind,
 } from './tauri-installer'
 
 interface InstallForAgentButtonProps {
@@ -54,6 +55,17 @@ interface AgentEntry extends AgentTarget {
   outdated?: boolean
   /** True when a same-named non-skillhub dir exists for this agent (manual skill). */
   unmanaged?: boolean
+  /** How the entry exists on disk, when it does at all. */
+  kind?: LocationKind
+}
+
+/**
+ * The path skillhub would manage for `slug` under this agent's skills root.
+ * Rust resolves a symlink here to its target, so addressing the entry by path
+ * keeps a shared real directory intact.
+ */
+function locationPath(agent: AgentTarget, slug: string): string {
+  return `${agent.dir.replace(/[/\\]+$/, '')}/${slug}`
 }
 
 /**
@@ -108,6 +120,7 @@ export function InstallForAgentButton({
             installedVersion: st?.version,
             outdated: st?.outdated,
             unmanaged: st?.unmanaged,
+            kind: st?.kind,
           }
         })
         setAgents(merged)
@@ -185,17 +198,25 @@ export function InstallForAgentButton({
   }
 
   const handleUninstall = async () => {
-    if (!selectedId) return
+    if (!selectedId || !selectedAgent) return
     setAction('uninstalling')
     try {
-      const result = await uninstallSkill(selectedId, slug)
-      if (result === null) return
-      toast.success(
-        t('skillDetail.installForAgent.uninstallSuccess'),
-        // result.backupDir
-        //   ? t('skillDetail.installForAgent.uninstallBackup', { dir: result.backupDir })
-        //   : result.dir,
-      )
+      const result = await uninstallSkill(locationPath(selectedAgent, slug), selectedId)
+      if (result === null) {
+        // Not in the desktop shell. Reset first: returning while the action is
+        // still 'uninstalling' would leave every control disabled with no way
+        // back.
+        setAction('idle')
+        return
+      }
+      // Say what actually happened — a link removal leaves the real directory
+      // behind, and an unmanaged directory is renamed rather than deleted.
+      const detail = result.realPathKept
+        ? t('localSkills.uninstallLinkKept', { path: result.realPathKept })
+        : result.backupDir
+          ? t('localSkills.uninstallBackup', { dir: result.backupDir })
+          : result.dir
+      toast.success(t('skillDetail.installForAgent.uninstallSuccess'), detail)
       // Refresh status so the agent no longer shows as installed.
       await refreshStatus()
       setAction('idle')
@@ -220,6 +241,7 @@ export function InstallForAgentButton({
           installedVersion: st?.version,
           outdated: st?.outdated,
           unmanaged: st?.unmanaged,
+          kind: st?.kind,
         }
       }),
     )
@@ -343,6 +365,16 @@ export function InstallForAgentButton({
                 )}
               </div>
             </TooltipProvider>
+
+            {/* A symlinked skill is updated at its target, not at this path —
+                say so before the user wonders why their link did not change.
+                Deliberately no path here: the status payload carries the link,
+                not its target, so naming one would state something untrue. */}
+            {selectedAgent?.kind === 'symlink' && (
+              <p className="rounded-lg bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground">
+                {t('skillDetail.installForAgent.symlinkNotice')}
+              </p>
+            )}
 
             <div className="flex items-center justify-end gap-3">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>

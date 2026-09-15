@@ -5,6 +5,7 @@ use crate::installer::agents::{
     find_agent, is_installed, profile_root, resolve_agent_targets, validate_slug, AGENT_PROFILES,
 };
 use crate::installer::install::{build_download_url, extract_zip, InstallInput};
+use crate::installer::link::LocationKind;
 
 #[cfg(test)]
 mod tests {
@@ -94,6 +95,27 @@ mod tests {
         assert!(input.dir.is_none());
     }
 
+    /// The exact payload the web view sends for "备份并安装".
+    ///
+    /// Serde ignores fields it does not know, so a key-name mismatch between
+    /// the TypeScript caller and this struct does not fail — it silently
+    /// supplies the `false` default. That default means `remove_dir_all`, so
+    /// mismatching here destroys the very directory the user asked to keep.
+    #[test]
+    fn install_input_reads_the_backup_flag_the_web_view_sends() {
+        let json = r#"{"namespace":"global","slug":"my-skill","version":"1.0.0","agent":"claude-code","dir":"/home/u/.claude/skills/my-skill","preserveExisting":true}"#;
+        let input: InstallInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            input.dir.as_deref(),
+            Some("/home/u/.claude/skills/my-skill")
+        );
+        assert!(
+            input.preserve_existing,
+            "the web view sends `preserveExisting`; if this is false the user's directory is deleted instead of backed up"
+        );
+    }
+
     #[test]
     fn extract_zip_unzips_entries() {
         // Build a tiny zip in memory with one file and one nested dir.
@@ -162,25 +184,14 @@ mod tests {
         crate::installer::metadata::write_metadata(&dir, &meta).unwrap();
         assert!(crate::installer::metadata::metadata_path(&dir).exists());
 
-        let status = crate::installer::metadata::detect_status(
-            &dir,
-            "claude-code",
-            "my-skill",
-            Some("1.2.3"),
-        )
-        .unwrap();
+        let status = crate::installer::metadata::detect_status(&dir, Some("1.2.3")).unwrap();
         assert!(status.installed);
         assert_eq!(status.version, "1.2.3");
         assert!(!status.outdated);
+        assert_eq!(status.kind, Some(LocationKind::Dir));
 
         // A different requested version marks it outdated.
-        let status2 = crate::installer::metadata::detect_status(
-            &dir,
-            "claude-code",
-            "my-skill",
-            Some("2.0.0"),
-        )
-        .unwrap();
+        let status2 = crate::installer::metadata::detect_status(&dir, Some("2.0.0")).unwrap();
         assert!(status2.installed);
         assert!(status2.outdated);
 
@@ -193,24 +204,73 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let status =
-            crate::installer::metadata::detect_status(&dir, "codex", "s", Some("1.0.0")).unwrap();
+        let status = crate::installer::metadata::detect_status(&dir, Some("1.0.0")).unwrap();
         assert!(!status.installed);
         assert!(status.version.is_empty());
+        // The directory exists, so it is reported as an unmanaged entry rather
+        // than as nothing at all.
+        assert!(status.unmanaged);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn uninstall_dir_backs_up_a_manual_skill() {
+    fn write_metadata_preserves_fields_written_by_the_cli() {
+        let dir = std::env::temp_dir().join(format!("skillhub-meta-merge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".skillhub")).unwrap();
+
+        // The CLI records fingerprint/files/versionId; this struct does not
+        // model them, and rewriting metadata must not drop them.
+        std::fs::write(
+            crate::installer::metadata::metadata_path(&dir),
+            r#"{
+              "schemaVersion": 1,
+              "registry": "https://skill.example.com",
+              "namespace": "global",
+              "slug": "my-skill",
+              "version": "1.0.0",
+              "source": "skillhub",
+              "versionId": 42,
+              "fingerprint": "abc123",
+              "files": { "SKILL.md": "hash" }
+            }"#,
+        )
+        .unwrap();
+
+        crate::installer::metadata::write_metadata(
+            &dir,
+            &crate::installer::metadata::InstalledMetadata::new(
+                "https://skill.example.com",
+                "global",
+                "my-skill",
+                "2.0.0",
+            ),
+        )
+        .unwrap();
+
+        let raw: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(crate::installer::metadata::metadata_path(&dir)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(raw["version"], "2.0.0", "known field must be updated");
+        assert_eq!(raw["versionId"], 42, "CLI field must survive a rewrite");
+        assert_eq!(raw["fingerprint"], "abc123");
+        assert_eq!(raw["files"]["SKILL.md"], "hash");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remove_location_backs_up_a_manual_skill() {
         let dir =
-            std::env::temp_dir().join(format!("skillhub-uninstall-manual-{}", std::process::id()));
+            std::env::temp_dir().join(format!("skillhub-remove-manual-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("references")).unwrap();
         std::fs::write(dir.join("SKILL.md"), "# manual skill").unwrap();
 
         // A dir without metadata (manual skill) is backed up, not deleted.
-        let outcome = crate::installer::metadata::uninstall_dir(&dir).unwrap();
+        let outcome = crate::installer::link::remove_location(&dir, false).unwrap();
         let backup = PathBuf::from(outcome.backup_dir.unwrap());
         assert!(!dir.exists(), "original dir should be renamed away");
         assert!(backup.exists());
@@ -220,9 +280,9 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_dir_removes_a_skillhub_skill() {
+    fn remove_location_deletes_a_skillhub_skill() {
         let dir =
-            std::env::temp_dir().join(format!("skillhub-uninstall-managed-{}", std::process::id()));
+            std::env::temp_dir().join(format!("skillhub-remove-managed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         crate::installer::metadata::write_metadata(
@@ -237,41 +297,9 @@ mod tests {
         .unwrap();
 
         // A skillhub-installed dir (has metadata) is removed directly.
-        let outcome = crate::installer::metadata::uninstall_dir(&dir).unwrap();
+        let outcome = crate::installer::link::remove_location(&dir, true).unwrap();
         assert!(outcome.backup_dir.is_none());
+        assert!(outcome.real_path_kept.is_none());
         assert!(!dir.exists());
-    }
-
-    #[test]
-    fn scan_agent_skills_lists_installed_and_skips_plain_dirs() {
-        let root = std::env::temp_dir().join(format!("skillhub-scan-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-
-        // A skillhub-installed skill (has metadata).
-        let skill_dir = root.join("my-skill");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        crate::installer::metadata::write_metadata(
-            &skill_dir,
-            &crate::installer::metadata::InstalledMetadata::new(
-                "https://skill.example.com",
-                "global",
-                "my-skill",
-                "1.2.3",
-            ),
-        )
-        .unwrap();
-
-        // A plain directory without metadata must be skipped.
-        let plain = root.join("not-a-skill");
-        std::fs::create_dir_all(&plain).unwrap();
-
-        let skills = crate::installer::metadata::scan_agent_skills("claude-code", &root);
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].slug, "my-skill");
-        assert_eq!(skills[0].version, "1.2.3");
-        assert_eq!(skills[0].agent, "claude-code");
-        assert!(skills[0].dir.ends_with("my-skill"));
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
