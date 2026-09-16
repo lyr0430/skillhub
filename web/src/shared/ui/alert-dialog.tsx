@@ -38,7 +38,6 @@ const AlertDialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <AlertDialogPrimitive.Cancel className="sr-only">取消</AlertDialogPrimitive.Cancel>
     </AlertDialogPrimitive.Content>
   </AlertDialogPortal>
 ))
