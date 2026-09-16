@@ -1,6 +1,6 @@
 ---
 name: client-skill-manage-20260911-01
-status: designed
+status: implemented
 ---
 
 # 技术方案：客户端 Skill 安装（Tauri 桌面应用）

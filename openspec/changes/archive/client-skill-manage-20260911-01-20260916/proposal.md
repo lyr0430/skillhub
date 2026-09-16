@@ -1,7 +1,7 @@
 ---
 name: client-skill-manage-20260911-01
 created: 2026-09-11
-status: draft
+status: implemented
 ---
 
 # 需求提案：客户端 Skill 管理功能
