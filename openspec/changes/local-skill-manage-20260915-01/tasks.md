@@ -70,7 +70,7 @@ status: implemented
 - [x] 7.8 卸载确认文案显示相对 `target`（如 `../../.agents/skills/x`）而非 `realPath`；`install-for-agent-button` 的软链接提示声称给出「真实目录」但实际给的是链接路径 → 前者改用 `realPath`，后者改为不声称路径。
 - [x] 7.9 补 `read_frontmatter_value` 非 UTF-8 用例。
 - [x] 7.10 补 `scan_roots` root 不可读（chmod 000）用例。
-- [x] 7.11 **[AC9 真实证据]** 新增 `cli/test/unit/services/installed-skill-metadata.test.ts`：用 desktop 端 Rust 写出的 metadata 形状（含新增可选 `homepage`）跑 CLI 的 `readInstalledSkillMetadata`，含截断文件必须 `invalid` 的用例。此前该项目**没有任何**该函数的测试。
+- [x] 7.11 **[AC9 真实证据]** 新增 `cli/test/unit/services/installed-skill-metadata.test.ts`：用 desktop 端 metadata 的**形状**（含新增可选 `homepage`）跑 CLI 的 `readInstalledSkillMetadata`，含截断文件必须 `invalid` 的用例。此前该项目**没有任何**该函数的测试。**这份 fixture 是手写的字面量，不是 Rust 写出的产物，两者之间没有自动化绑定**——契约漂移只能靠人读出来。真正的跨语言绑定需要端到端跑一次 `install_skill`（见遗留 11，需联网）。
 - [x] 7.12 `replace_directory`：`remove_dir_all` → `rename` 改为 `rename(old → old.skillhub-old-*)` → `rename(new → real)` → 删除 old，失败时把 old 改回。design.md 同步把「原子替换」改为准确表述。
 - [x] 7.13 操作后 refresh 不再打回骨架屏（`refresh({ silent: true })`），保住滚动位置与键盘焦点。
 - [x] 7.14 `uninstall_location` 拆出 `uninstall_location_under(dir, roots)`，使「删除 vs 备份」这一决策可被直接测试（此前该函数**零测试**）。
@@ -80,9 +80,21 @@ status: implemented
 - [x] 7.18 warning 分隔符 `'；'` 改为语言中立的 `' · '`。
 - [x] 7.19 文档诚实化：`proposal.md` 非目标 5（Windows junction 未实现专门识别，实际是 fail-closed 且未验证）、`design.md` 的原子性表述、非 UTF-8 行为、`HomepageSource::Metadata` 无生产者。
 
+### Milestone 8：二次评审修复（`/harness-review` 第二轮）
+
+第二轮以「不信任任何工件声明」为前提重跑四位评审。Rust 评审 **BLOCK**（1 CRITICAL + 1 HIGH），安全评审认为 7.1–7.9 的修复成立但指出 1 个 HIGH 遗留（软链接目标未校验），OpenSpec 对齐评审 **CONDITIONAL PASS**（数字可复现，文档过期）。TypeScript 评审被中断，改用工具链实证（tsc / eslint / 全量用例）。
+
+- [x] 8.1 **[CRITICAL] `detect_status` 返回 `Result` 是可被折叠的失败**：调用方一个 `.ok()` 就把「metadata 解析失败」变成「这里没有东西」→ `unmanaged: false` → 后续无备份删除。修复：签名改为**不可失败**的 `detect_status(dir, requested) -> SkillStatus`，类型上不留失败位；`unmanaged` 改由 `classify().is_some()` 判定。补 3 个测试（损坏 metadata 报 unmanaged、条目缺失报 absent、悬空链接报 unmanaged）。
+- [x] 8.2 **[HIGH] 软链接目标可以是任意目录**：`ensure_under_agent_root` 只校验**条目**（叶子名 + 父目录在 root 下），而 `swap_into_place` / `replace_directory` 作用在**解析结果**上——`~/.claude/skills/home -> ~` 可通过全部校验，把家目录 `rename` 走再删掉；桌面端「更新」按钮传的正是链接路径且默认 `preserveExisting: false`。修复：`resolve_install_target` 跟随链接前要求目标含 `SKILL.md`（`is_skill_package`），否则以 `unsafe_link_target` 拒绝，且在下载之前。补 2 个测试（指向非技能目录被拒 + 指向技能包仍跟随）。
+- [x] 8.3 暂存目录过滤由子串匹配改为**形状匹配**（`is_skillhub_sibling` + `SIBLING_TAGS`）：子串匹配会连用户自建的 `my.skillhub-tmp-notes` 一起隐藏；`unique_sibling` 加 `debug_assert` 防止新 tag 被加进生成端却漏在过滤端。
+- [x] 8.4 `open_external_url` 校验的是 `trim()` 后的值、执行的却是未 trim 的原值（同一函数内两个不同的串）。修复：trim 一次并执行同一个 `url`。
+- [x] 8.5 `SKILL.md` 文件名抽为 `frontmatter::SKILL_FILE`，供 `read_frontmatter_value` 与 8.2 的守卫共用，避免两处漂移。
+- [x] 8.6 抽出 `read_metadata_lenient`，`has_metadata` 与 `detect_status` 共用同一读取语义。
+- [x] 8.7 文档同步：`design.md` 的 `cmd /C start` → `explorer`、`Vec<LocalSkill>` → `LocalSkillsPayload`、四步校验 → 五步 + `is_plain_entry_name`、事务序列改为 `rename→rename→删除`、暂存命名、`has_metadata`/`detect_status` 表述、`ForeignSymlink` 的卸载行为行（原写「仅 `remove_file`」，实为按 `symlink_metadata` 决策、普通文件走备份）、新增 8.2 的风险行；`proposal.md` G2 的 `junction` → `foreign-symlink`、G1 把 `broken-link` 从 `origin` 改为 `kind`（悬空链接实为 `unmanaged` + `broken-symlink`）。
+
 ## 验收检查点
 
-- [x] `cd web/src-tauri && cargo test`：**48 passed, 0 failed, 1 ignored**。
+- [x] `cd web/src-tauri && cargo test`：**53 passed, 0 failed, 1 ignored**（Milestone 8 追加 5 个用例）。
 - [x] `cargo clippy --all-targets -- -D warnings`：0 警告；`cargo fmt --check` 干净。
 - [x] `cd web && pnpm lint && pnpm typecheck && pnpm vitest run`：lint 0 warning、tsc 无错、**206 文件 / 800 用例**全通过。
 - [x] `cd cli && bun test`：**528 passed / 48 files**（含新增 5 个 metadata 契约用例）。
@@ -91,12 +103,12 @@ status: implemented
 - [x] 验收标准 4：跨 agent 同源聚合为一条记录多位置（实机 104 链接位置聚合进 19 个技能）。
 - [x] 验收标准 6：非受管目录走备份（含 metadata 损坏的情况，见 7.2）。
 - [x] 验收标准 8：非 http/https 一律拒绝。
-- [x] 验收标准 9：CLI 校验器接受 desktop 写出的 metadata（7.11）。
+- [x] 验收标准 9：CLI 校验器接受 desktop 形状的 metadata（7.11；fixture 手写，与 Rust 写入端无自动绑定）。
 - [x] wire 契约锁定：`local_skill_serializes_to_the_web_contract` + `install_input_reads_the_backup_flag_the_web_view_sends`。
 - [x] 无新增外部依赖（无 YAML crate、无 Tauri 插件）。
 - [x] 受保护路径零变更。
 - [ ] **Windows 实机冒烟待执行**（无 Windows 环境）。Unix 专属链接用例以 `#[cfg(unix)]` 跳过；`open_external_url` 在 Windows 用 `explorer.exe` 而非 `cmd /C start`（已由安全评审确认是真实改善）。
-- [ ] 二次评审待执行。
+- [x] 二次评审已执行（见 Milestone 8）。TypeScript 评审被中断，其四项修复（7.7 / 7.8 / 7.13 / 7.17）改以工具链实证：`tsc --noEmit` 无错、`eslint --max-warnings 0` 无问题、vitest 206 文件 / 800 用例全通过。
 
 ## 执行偏差记录
 
@@ -111,6 +123,11 @@ status: implemented
 | `detect_status` 签名 | 2.3 只写「增加 kind」 | 同时删除死参数 `(agent_id, slug)`、`unmanaged` 语义由 `exists()` 改为 `classify().is_some()` | 后者正是悬空链接误判的修复本身 |
 | 5.6 标题徽章 | design 未设计 | 新增 UI + 2 个 i18n key | 实现后按用户要求追加 |
 | `cli/` 目录 | 非目标 4：不改 CLI | 新增 1 个**测试文件**（无行为改动） | AC9 需要真实的跨语言验证；此前该函数无任何测试 |
+| Windows 打开方式 | design 原写 `cmd /C start "" <url>` | 改为 `explorer <url>` | `cmd` 会把 `&` / `^` / `|` 当元字符重新解释；explorer 以单参数接收 URL，中间无 shell |
+| `list_installed_skills` 返回类型 | design 写 `Vec<LocalSkill>` | 改为 `LocalSkillsPayload { skills, warnings }` | 读不到的 skills root 必须能上报，否则 UI 只能静默显示一个短列表 |
+| 前端卡片组件 | design 只描述「列表项」内容 | 抽出独立文件 `local-skill-card.tsx` | 卡片已有 origin 徽章 / 链接徽章 / 位置标签 / 操作按钮四组逻辑，留在页面文件里会同时撑大分支深度与文件长度 |
+| `detect_status` 返回类型 | design 只要求「增加 kind」 | 二轮评审后改为不可失败的 `SkillStatus`（8.1） | 返回 `Result` 让调用方可以把解析失败 `.ok()` 成「此处为空」，进而无备份删除 |
+| 软链接目标的写入前提 | design 未设计 | 二轮评审后新增「目标必须是技能包」守卫与 `unsafe_link_target`（8.2） | 破坏性动作作用在解析结果上，不加此前提则链接可把任意目录交给替换逻辑 |
 
 ## 已知遗留（本次未修，按约定范围延后）
 

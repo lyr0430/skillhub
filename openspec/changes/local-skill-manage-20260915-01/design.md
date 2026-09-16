@@ -115,7 +115,9 @@ pub struct LocalSkill {
 | `Dir` + `Unmanaged` | **`backup_dir(path)` 重命名备份**，绝不删除 |
 | `Symlink`（无论目标受管与否） | **仅 `remove_file(path)` 删除链接**，真实目录原封不动 |
 | `BrokenSymlink` | 仅 `remove_file(path)`（「清理失效链接」） |
-| `ForeignSymlink` | 仅 `remove_file(path)` |
+| `ForeignSymlink` | **不按桶名决策**：`remove_location` 重新 `symlink_metadata()` 判定——确为链接才 `remove_file(path)`；它同时收着**普通文件**，普通文件走 `backup_dir(path)` 备份 |
+
+上表最后一行的写法是有意为之：`ForeignSymlink` 是分类桶，不是对文件系统的断言。它同时容纳「指向文件的链接、`canonicalize` 因链接环或无权限失败、以及**普通文件**」，因此任何破坏性分支都不能只看 `kind`。卸载路径唯一的判定依据是 `symlink_metadata().file_type().is_symlink()`；这也意味着 `LocationKind::is_link()` 不能作为删除依据（`src/installer/link.rs` 的文档已注明）。
 
 ```rust
 pub struct LocationRemoval {
@@ -147,13 +149,17 @@ if fs::symlink_metadata(path)?.file_type().is_symlink() {
 (target, predecessor) = resolve_install_target(location.path)   // 无副作用：只判定，不动盘
 download → tmp = real.parent()/{name}.skillhub-tmp-{pid}-{nanos}-{nonce} → extract_zip
 clear_predecessor(target, predecessor)         // 失效链接→remove_file；普通文件→备份
-replace_directory(real, effective)             // rename(real → real.skillhub-old-*) → rename(effective → real) → 删除 old
+replace_directory(real, effective)             // rename(real → real.skillhub-old-{pid}-{nanos}-{nonce}) → rename(effective → real) → 删除 old
 write_metadata(&real, ...)                     // 写到真实目录
 ```
+
+暂存目录统一用 `{name}.skillhub-{tag}-{pid}-{nanos}-{nonce}`（`tag ∈ {backup, tmp, old}`）。扫描按**形状**排除这些名字而非子串匹配——否则用户自己建的 `my.skillhub-tmp-notes` 会被一起吞掉；`tag` 取自 `SIBLING_TAGS` 并有 `debug_assert` 兜底，因为扫描正是按这份表过滤的。
 
 关于「原子性」的准确表述：最终那一步 `rename` 本身是原子的，但**整个替换不是**——它由两次 `rename` 加一次删除组成。之所以先 `rename(real → old)` 而不是 `remove_dir_all(real)`，是为了让**每一个中间状态都有内容留在盘上**，且 `rename(effective → real)` 失败时能把 old 改回来；`remove_dir_all` 先行的写法会在失败时同时失去旧版本并让新版本卡在临时目录里。
 
 `resolve_install_target` 刻意无副作用，清理放到**下载成功之后**：否则一次失败或不被授权的下载会先把用户原有的条目毁掉。
+
+**跟随链接前必须确认目标是技能包**。跟随链接是「一份技能给多个 agent 共用」的实现方式，也是唯一一处**写入目标由文件系统而非本程序决定**的地方——上面所有破坏性动作（备份、rename 暂存、删除）都作用在解析结果 `real` 上。若不加限制，`~/.claude/skills/home -> ~` 这样的链接会直接通过条目名与父目录两道校验（叶子名合法、父目录确实是 agent root），把用户整个家目录 `rename` 走再删掉；桌面端自己的「更新」按钮恰好传的是链接路径且从不设置 `preserveExisting`，默认即 `false`。因此 `resolve_install_target` 在解析成功后要求 `real` 含 `SKILL.md`，否则以 `unsafe_link_target` 拒绝，且这一步在下载之前完成。契约取严格形式（`<real>/SKILL.md`，不接受嵌套包根），因为这正是「任意目录」无法满足、而真实共享技能都能满足的判据。
 
 **绝不 touch 链接本身**。改完之后：`~/.claude/skills/x` 仍是链接、仍指向 `~/.agents/skills/x`，内容已是新版本，所有引用该真实目录的 agent 同步生效。
 
@@ -194,8 +200,10 @@ write_metadata(&real, ...)                     // 写到真实目录
 | 平台 | 命令 |
 |---|---|
 | macOS | `open <url>` |
-| Windows | `cmd /C start "" <url>` |
+| Windows | `explorer <url>` |
 | Linux | `xdg-open <url>` |
+
+Windows 用 `explorer.exe` 而不是 `cmd /C start ""`：explorer 把 URL 当单个参数接收，中间没有 shell，因此 `&`、`^`、`|` 这些对 cmd 有意义的字符不会被重新解释。
 
 **不引入 `tauri-plugin-opener`**：`capabilities/default.json` 目前只有 `core:default`，引入插件需要扩权限面，对单一功能不值得。
 
@@ -211,7 +219,7 @@ write_metadata(&real, ...)                     // 写到真实目录
 
 | 命令 | 变更 |
 |---|---|
-| `list_installed_skills` | 返回 `Vec<LocalSkill>`（结构变更） |
+| `list_installed_skills` | 返回 `LocalSkillsPayload { skills, warnings }` —— 结构变更，并额外带上读不到的 skills root，避免 UI 静默显示短列表 |
 | `detect_skill_status` | 增加 `kind` 字段；修正悬空链接被 `exists()` 误判为「未安装」的问题 |
 | `install_skill_command` | 内部走真实路径写入（第 3 节）；`preserve_existing` 语义不变（并修正 wire 上的 key 名，见下）；**`dir` 与 `registry` 改为可信边界内校验** |
 | `uninstall_skill_command` | 签名由 `(agent, slug)` 改为 `(dir, agent?)` —— 因为要能单独解除某一个链接 |
@@ -231,7 +239,9 @@ write_metadata(&real, ...)                     // 写到真实目录
 
 ### 5.2 「受管」只有一个定义
 
-`metadata::has_metadata` 从「`metadata.json` 存在」改为「**能被解析**」（`matches!(read_metadata(..), Ok(Some(_)))`）。此前扫描用「能解析」、卸载与安装覆盖用「存在」，两处定义漂移，导致 metadata 损坏的目录在 UI 上显示为未受管（承诺会备份）而实际被 `remove_dir_all` 删除。现在扫描、卸载、安装覆盖共用同一个函数，无法再漂移。
+`metadata::has_metadata` 从「`metadata.json` 存在」改为「**能被解析**」（`read_metadata_lenient(..).is_some()`）。此前扫描用「能解析」、卸载与安装覆盖用「存在」，两处定义漂移，导致 metadata 损坏的目录在 UI 上显示为未受管（承诺会备份）而实际被 `remove_dir_all` 删除。现在扫描、卸载、安装覆盖共用同一个函数，无法再漂移。
+
+配套修正：`detect_status` 的返回类型由 `Result<SkillStatus, _>` 改为**不可失败**的 `SkillStatus`。返回 `Result` 正是漂移得以发生的入口——调用方一个 `.ok()` 就把「解析失败」折叠成 `unmanaged: false`（「这个位置是空的，可以覆盖」），随后无备份删除目录。类型上不给失败留位置，调用方才无从折叠。`unmanaged` 现在的定义是「该位置存在条目、但不是受管的」（`kind.is_some()`），而不再依赖 metadata 解析是否成功。
 
 ### 6. 前端变更
 
@@ -287,23 +297,24 @@ write_metadata(&real, ...)                     // 写到真实目录
 | 风险 | 等级 | 缓解方案 |
 |---|---|---|
 | 误删用户真实技能目录（最高危） | **高** | 全部删除路径统一走 `link.rs`，显式 `symlink_metadata` 判定；非受管目录一律备份重命名；验收标准 2 用真实目录内文件 mtime/inode 未变作硬判据；Rust 单测覆盖完整链接矩阵 |
-| `uninstall_skill_command` 前端传参导致任意路径删除 | **高** | 第 5 节的四步路径校验（规范化 + 逐段前缀匹配 + 不等于 root + `validate_slug`）；单测覆盖越界用例 |
+| `uninstall_skill_command` 前端传参导致任意路径删除 | **高** | 第 5 节的五步路径校验（原始文本拒绝尾部分隔符 / `.` → 叶子名 `is_plain_entry_name` → 父目录 `canonicalize` → 叶子原样拼接 → 逐组件比较 `parent == root`）；单测覆盖越界用例 |
 | 更新链接时误改链接本身 | **高** | 不变量：先 `canonicalize` 再操作；验收标准 3 用 `lstat` 仍是 symlink + 目标路径未变作硬判据 |
+| 软链接指向非技能目录，导致破坏性写入落到用户任意目录 | **高** | `resolve_install_target` 跟随链接前要求目标目录含 `SKILL.md`（`is_skill_package`），否则以 `unsafe_link_target` 拒绝；单测覆盖「指向非技能目录被拒」与「指向技能包仍跟随」两侧 |
 | metadata 写回丢失 CLI 字段（现存缺陷） | 中 | 改为合并式写入；补回归测试 |
 | 链接环 / 权限不足导致扫描崩溃 | 中 | `canonicalize` 错误归为 `ForeignSymlink`；`read_dir` 失败只跳过该 root 并记 warning；单项 `unreadable` 降级 |
 | homepage 被写成非 http scheme 导致 XSS / 命令注入 | 中 | Rust 侧白名单校验 + 控制字符拒绝；前端不直接 `window.open` |
 | 数据模型变更导致本地技能页回归 | 中 | `local-skills.test.tsx` 全量适配；改动仅限两个消费方 |
-| Windows 上 junction / `.lnk` 语义差异 | 低 | 本期只要求正确识别并降级为「不可管理的链接」，不提供删除入口；Unix 专属链接单测用 `#[cfg(unix)]` 跳过 |
+| Windows 上 junction / `.lnk` 语义差异 | 低 | 本期不建模 junction；`.lnk` 与「指向文件的链接」同类，归入 `ForeignSymlink`。`ForeignSymlink` 只是分类桶、不是对文件系统的断言，因此删除路径一律重新 `symlink_metadata` 确认：是链接才 `remove_file`，是普通文件则备份而非删除。Unix 专属链接单测用 `#[cfg(unix)]` 跳过，Windows 冒烟测试本期未执行 |
 | 相对软链接（`../../.agents/skills/x`）解析错误 | 低 | 一律用 `canonicalize` 解析（自动处理相对/绝对）；`target` 仅原样保留用于展示 |
 
 ## 事务与数据
 
 - **事务边界**：无数据库事务。本地文件系统操作按「先备份/先写真实目录、后删除」的顺序编排：
-  - 更新：`extract → tmp`（失败则清理 tmp，原目录未动）→ `remove 旧 → rename 新`（rename 失败则保留 tmp 并报错，便于人工恢复）→ `write_metadata`。
+  - 更新：`extract → tmp`（失败则清理 tmp，原目录未动）→ `rename 旧 → aside` → `rename 新 → dir` → `remove_dir_all aside`；第二步失败则把 `aside` 改回原名，宁可安装失败也不让技能消失。
   - 卸载非受管：`rename` 到备份名（原子，失败则原目录未动）。
   - 卸载链接：`remove_file`（原子）。
 - **数据迁移**：无。旧版 `metadata.json`（无 `homepage`）正常读取。
-- **回滚方案**：代码回滚即恢复旧行为；本地磁盘上唯一新增产物是备份目录（`<name>.skillhub-backup-<ts>`）与可能的 `HOME` 之外的 `.skillhub-tmp-*`（失败时保留并给出路径）。无不可逆操作。
+- **回滚方案**：代码回滚即恢复旧行为；本地磁盘上唯一新增产物是备份目录（`<name>.skillhub-backup-<ts>`）与可能的 `.skillhub-tmp-*` / `.skillhub-old-*` 暂存目录（进程在交换中途被杀时残留，正常路径下会自清理）。无不可逆操作。
 
 ## 测试策略
 

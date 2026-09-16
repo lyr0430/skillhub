@@ -83,10 +83,11 @@ pub fn detect_skill_status(slug: String, version: String) -> CommandResult<Vec<A
         .into_iter()
         .map(|target| {
             let status = find_agent(&target.id)
-                .and_then(|profile| {
+                .map(|profile| {
                     let dir = skill_dir(profile, &slug);
-                    detect_status(&dir, Some(&version)).ok()
+                    detect_status(&dir, Some(&version))
                 })
+                // Unknown agent: report nothing rather than guessing.
                 .unwrap_or(SkillStatus {
                     installed: false,
                     version: String::new(),
@@ -185,7 +186,10 @@ pub async fn uninstall_skill_command(
 /// the default browser rather than navigated to inside the webview.
 #[tauri::command]
 pub fn open_external_url(url: String) -> CommandResult<()> {
-    if let Err(err) = validate_external_url(&url) {
+    // Validate and execute the same string: `validate_external_url` trims, so
+    // opening the untrimmed value would act on something never checked.
+    let url = url.trim();
+    if let Err(err) = validate_external_url(url) {
         return CommandResult::failure(err.message);
     }
 
@@ -193,11 +197,11 @@ pub fn open_external_url(url: String) -> CommandResult<()> {
     // URL as a single argument with no shell in between, so URL characters that
     // mean something to cmd (`&`, `^`, `|`) cannot be reinterpreted.
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&url).spawn();
+    let result = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer").arg(&url).spawn();
+    let result = std::process::Command::new("explorer").arg(url).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
 
     match result {
         Ok(_) => CommandResult::success(()),

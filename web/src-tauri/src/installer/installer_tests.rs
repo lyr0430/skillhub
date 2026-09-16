@@ -184,14 +184,14 @@ mod tests {
         crate::installer::metadata::write_metadata(&dir, &meta).unwrap();
         assert!(crate::installer::metadata::metadata_path(&dir).exists());
 
-        let status = crate::installer::metadata::detect_status(&dir, Some("1.2.3")).unwrap();
+        let status = crate::installer::metadata::detect_status(&dir, Some("1.2.3"));
         assert!(status.installed);
         assert_eq!(status.version, "1.2.3");
         assert!(!status.outdated);
         assert_eq!(status.kind, Some(LocationKind::Dir));
 
         // A different requested version marks it outdated.
-        let status2 = crate::installer::metadata::detect_status(&dir, Some("2.0.0")).unwrap();
+        let status2 = crate::installer::metadata::detect_status(&dir, Some("2.0.0"));
         assert!(status2.installed);
         assert!(status2.outdated);
 
@@ -204,7 +204,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let status = crate::installer::metadata::detect_status(&dir, Some("1.0.0")).unwrap();
+        let status = crate::installer::metadata::detect_status(&dir, Some("1.0.0"));
         assert!(!status.installed);
         assert!(status.version.is_empty());
         // The directory exists, so it is reported as an unmanaged entry rather

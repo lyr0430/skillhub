@@ -135,56 +135,110 @@ pub struct SkillStatus {
 /// Determine the status of a skill at `install_dir` against an optional
 /// `requested_version`.
 ///
-/// Existence is judged with `symlink_metadata` rather than `Path::exists`: the
-/// latter follows links, so a dangling symlink would be reported as "not
-/// installed" and leave the user with no clue that a broken entry is sitting in
-/// their skills directory.
-pub fn detect_status(
-    install_dir: &Path,
-    requested_version: Option<&str>,
-) -> Result<SkillStatus, InstallError> {
+/// Two deliberate choices, both about the same failure:
+///
+/// * Existence is judged with `symlink_metadata` (via `classify`) rather than
+///   `Path::exists`: the latter follows links, so a dangling symlink would be
+///   reported as "not installed" and leave the user with no clue that a broken
+///   entry is sitting in their skills directory.
+/// * **Infallible.** A directory whose `metadata.json` exists but does not parse
+///   must be reported as `unmanaged`, which is what makes the client ask the
+///   user before touching it. Returning a `Result` here is what let a caller
+///   `.ok()` the parse error into `unmanaged: false` — "this slot is empty, go
+///   ahead" — and delete the directory with no backup. There is no error left to
+///   swallow, so that mistake cannot be made again.
+pub fn detect_status(install_dir: &Path, requested_version: Option<&str>) -> SkillStatus {
     let kind = crate::installer::link::classify(install_dir).ok();
 
-    match read_metadata(install_dir)? {
+    match read_metadata_lenient(install_dir) {
         Some(meta) => {
             let outdated = requested_version
                 .map(|requested| requested != meta.version)
                 .unwrap_or(false);
-            Ok(SkillStatus {
+            SkillStatus {
                 installed: true,
                 version: meta.version,
                 outdated,
                 unmanaged: false,
                 kind,
-            })
+            }
         }
-        None => Ok(SkillStatus {
+        None => SkillStatus {
             installed: false,
             version: String::new(),
             outdated: false,
+            // The entry exists, so it is *unmanaged*, not absent — the client
+            // will ask before replacing or deleting it.
             unmanaged: kind.is_some(),
             kind,
-        }),
+        },
     }
 }
 
-/// True when `install_dir` carries skillhub install metadata we can actually
-/// read, i.e. the skill was installed by (and is manageable by) skillhub rather
-/// than placed manually or by another tool.
+/// Read metadata, treating "absent" and "present but unreadable" alike.
 ///
-/// Deliberately not `metadata_path(..).exists()`. A truncated, hand-edited, or
-/// half-written `metadata.json` means we cannot tell what this directory is, and
-/// the only safe answer is "not ours". Existence-checking instead of
-/// parsing-checking is what would let a corrupt file turn a directory the UI
-/// promises to back up into one that gets deleted outright — and it is the only
-/// definition of "managed" in the crate, so the scan, the uninstall path, and
-/// the install-over-existing path cannot drift apart.
-pub fn has_metadata(install_dir: &Path) -> bool {
-    matches!(read_metadata(install_dir), Ok(Some(_)))
+/// This is the single verdict the whole crate uses for "is this directory
+/// ours?": the scan, the uninstall path, the install-over-existing path, and the
+/// per-agent status all bottom out here, so they cannot disagree about a
+/// directory whose metadata is corrupt.
+///
+/// A corrupt file must read as "not ours". The alternative — treating it as
+/// absent — is what lets another tool's directory be deleted when the UI
+/// promised a backup, and it is also what stops a hostile skill from making
+/// itself look unmanaged to avoid being deleted.
+pub fn read_metadata_lenient(install_dir: &Path) -> Option<InstalledMetadata> {
+    read_metadata(install_dir).ok().flatten()
 }
 
-/// Rename a non-skillhub directory to a sibling backup so its contents are not
-/// lost when the skill is replaced or uninstalled. Returns the backup path.
+/// True when `install_dir` carries skillhub metadata we can actually read, i.e.
+/// the skill was installed by (and is manageable by) skillhub rather than placed
+/// manually or by another tool.
+///
+/// Deliberately not `metadata_path(..).exists()` — see
+/// [`read_metadata_lenient`] for why existence is the wrong question.
+pub fn has_metadata(install_dir: &Path) -> bool {
+    read_metadata_lenient(install_dir).is_some()
+}
+
+/// Tags this crate uses for the sibling entries it creates next to a skill.
+///
+/// Every generator and the scan's filter must agree on this list: a tag that is
+/// generated but not recognised comes back as a phantom skill with its own
+/// uninstall button, and the user is offered to delete their own backup.
+pub(crate) const SIBLING_TAGS: [&str; 3] = ["backup", "tmp", "old"];
+
+/// True when `name` looks like a sibling this crate generated:
+/// `<stem>.skillhub-<tag>-<digits>[-<digits>…]`.
+///
+/// Matched by shape rather than by substring on purpose. A substring test would
+/// also hide a user's own directory named `my.skillhub-tmp-notes` — a real skill
+/// the page should still list and let them manage.
+pub fn is_skillhub_sibling(name: &str) -> bool {
+    let Some((_, rest)) = name.rsplit_once(".skillhub-") else {
+        return false;
+    };
+
+    let mut parts = rest.split('-');
+    let Some(tag) = parts.next() else {
+        return false;
+    };
+    if !SIBLING_TAGS.contains(&tag) {
+        return false;
+    }
+
+    // `backup` is `<tag>-<seconds>[-<index>]`; the others are
+    // `<tag>-<pid>-<nanos>-<nonce>`. All digits either way.
+    let numbers: Vec<&str> = parts.collect();
+    !numbers.is_empty()
+        && numbers.len() <= 4
+        && numbers
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// Rename a non-skillhub directory (or file) to a sibling backup so its contents
+/// are not lost when the skill is replaced or uninstalled. Returns the backup
+/// path.
 pub(crate) fn backup_dir(install_dir: &Path) -> Result<PathBuf, InstallError> {
     let name = install_dir
         .file_name()

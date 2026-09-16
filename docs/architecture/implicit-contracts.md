@@ -65,6 +65,13 @@ namespace slug 不可使用保留字：`admin, api, dashboard, search, auth, me,
 - **Agent skill 目录约定**（与 `cli/src/agents/profiles/` 对齐，避免桌面端与 CLI 两处漂移）：claude-code → `.claude/skills`、codex → `.codex/skills`、opencode → `.opencode/skills`、openclaw → `.openclaw/skills`、**generic（默认全局）→ `.agents/skills`**。路径由 `dirs::home_dir()` / `%USERPROFILE%` 解析，禁止硬编码绝对路径。
 - **Tauri 运行环境检测**：通过 `window.__TAURI__?.core?.invoke` 是否存在判断。桌面端走一键安装（弹窗选择 agent → Rust `install_skill`），**网页端回退为复制安装命令**（浏览器沙箱无法写本地目录，此为不可绕过约束）。
 - **zip 解压安全**：解压必须防 zip-slip（`enclosed_name()` 校验，禁止条目逃逸出目标目录）。
+- **`metadata.json` 是 CLI 与桌面端的共享契约**：`.skillhub/metadata.json`（`schemaVersion: 1`，camelCase）由 CLI 写入，桌面端也会读写。桌面端的 `InstalledMetadata` 结构体只建模其中一部分字段，**写回必须是合并式**（读原始 JSON → 覆盖已知字段 → 写回），否则 CLI 写入的 `versionId` / `fingerprint` / `files` 会被静默丢弃。两侧都不拒绝未知字段。
+- **「受管」只有一个定义**：`metadata.json` **能被解析**（而非文件存在）。扫描、卸载、安装覆盖三处必须共用同一个判定函数；历史上两处定义漂移曾导致「UI 承诺备份、实际无备份删除」。
+- **软链接是共享技能的唯一实现方式**，因此有两条硬不变量：
+  - **卸载只删链接本身**，真实目录原封不动（显式 `symlink_metadata().file_type().is_symlink()` 判定后 `remove_file`，不得对可能是链接的路径调用 `remove_dir_all`）。
+  - **更新写真实目录**，链接与其指向关系保持不变；跟随链接前必须确认目标目录含 `SKILL.md`，否则拒绝写入——破坏性动作作用在解析结果上，不加此前提则链接可把任意目录（如 `$HOME`）交给替换逻辑。
+- **Rust ↔ TypeScript 的 wire 字段名**：Rust 结构体上凡是多词字段，必须带 `#[serde(rename_all = "camelCase")]`。serde 静默忽略未知字段，字段名不一致不会报错，只会取 `#[serde(default)]` 的默认值——曾因此让「备份并安装」实际执行 `remove_dir_all`。
+- **路径来自前端时必须在 Rust 侧校验**：`install_skill` 与 `uninstall_skill_command` 的 `dir` 均来自 web view，两个入口必须对称地约束到 agent skill root 之内（只 `canonicalize` 父目录、叶子段按原样保留，按组件比较而非字符串前缀）。
 
 ## 权威来源
 
@@ -73,4 +80,5 @@ namespace slug 不可使用保留字：`admin, api, dashboard, search, auth, me,
 - 并发与幂等：[`docs/02-domain-model.md`](../02-domain-model.md)
 - 鉴权分层：[`docs/03-authentication-design.md`](../03-authentication-design.md)
 - 客户端安装（桌面/Tauri）约定：从本变更 `client-skill-manage-20260911-01`、[`docs/07-skill-protocol.md`](../07-skill-protocol.md) 沉淀。
+- `metadata.json` 共享契约、软链接不变量、wire 字段名规则、前端传入路径的校验边界：从本变更 `local-skill-manage-20260915-01` 沉淀。
 

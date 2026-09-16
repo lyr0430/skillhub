@@ -13,7 +13,9 @@ use crate::installer::homepage::{resolve_homepage, validate_external_url, Homepa
 use crate::installer::install::{resolve_install_target, swap_into_place, Predecessor};
 use crate::installer::link::{classify, ensure_under_roots, remove_location, LocationKind};
 use crate::installer::local_skills::{scan_roots, uninstall_location_under, SkillOrigin};
-use crate::installer::metadata::{metadata_path, read_metadata, write_metadata, InstalledMetadata};
+use crate::installer::metadata::{
+    detect_status, metadata_path, read_metadata, write_metadata, InstalledMetadata,
+};
 
 /// A throwaway tree under the OS temp dir, removed when it goes out of scope.
 ///
@@ -391,6 +393,63 @@ fn updating_through_a_link_keeps_the_link_and_updates_the_target() {
     assert_eq!(read_metadata(&real).unwrap().unwrap().version, "2.0.0");
 }
 
+/// A link is the one install target the filesystem chooses for us. Everything
+/// downstream — backup, rename-aside, `remove_dir_all` — acts on the resolved
+/// directory, so a link pointing at something that is not a skill would hand
+/// that directory over to the swap.
+///
+/// The shape that matters is `~/.claude/skills/home -> ~`: it sits directly
+/// inside an agent root, so the entry-name and parent checks both pass, and the
+/// app's own Update button passes `dir` as the link and never sets
+/// `preserveExisting`. Without this guard the user's home is moved aside and
+/// deleted.
+#[cfg(unix)]
+#[test]
+fn refuses_to_follow_a_link_that_does_not_point_at_a_skill() {
+    let tree = TempTree::new("link-guard");
+    let root = tree.at("skills");
+    std::fs::create_dir_all(&root).unwrap();
+
+    // A directory that is not a skill: no SKILL.md.
+    let victim = tree.at("victim");
+    std::fs::create_dir_all(victim.join("Documents")).unwrap();
+    std::fs::write(victim.join("notes.txt"), "irreplaceable").unwrap();
+
+    let link = root.join("home");
+    symlink_dir(&victim, &link);
+
+    let err = resolve_install_target(&link).unwrap_err();
+    assert_eq!(err.code, "unsafe_link_target");
+    assert!(
+        std::fs::read_to_string(victim.join("notes.txt")).is_ok(),
+        "the target must be untouched by resolution"
+    );
+    assert!(
+        std::fs::symlink_metadata(&link).is_ok(),
+        "the link must be untouched by resolution"
+    );
+}
+
+/// The compat half of the guard: a link that *does* point at a skill package is
+/// still followed, so the shared-skill layout keeps working.
+#[cfg(unix)]
+#[test]
+fn follows_a_link_that_points_at_a_skill_package() {
+    let tree = TempTree::new("link-guard-ok");
+    let root = tree.at("skills");
+    std::fs::create_dir_all(&root).unwrap();
+
+    let real = tree.at("store").join("shared");
+    make_skill(&real, "# shared\n", Some(("global", "shared", "1.0.0")));
+
+    let link = root.join("shared");
+    symlink_dir(&real, &link);
+
+    let (resolved, predecessor, _) = resolve_install_target(&link).unwrap();
+    assert_eq!(resolved, std::fs::canonicalize(&real).unwrap());
+    assert_eq!(predecessor, Predecessor::Directory);
+}
+
 #[cfg(unix)]
 #[test]
 fn installing_over_a_dangling_link_replaces_the_link() {
@@ -546,6 +605,60 @@ fn uninstall_backs_up_a_directory_whose_metadata_is_unreadable() {
     assert!(backup.join("SKILL.md").is_file(), "the content survived");
 
     let _ = std::fs::remove_dir_all(&backup);
+}
+
+/// The install path decides whether to ask the user from `detect_status`. If a
+/// corrupt `metadata.json` reads as "nothing here" instead of "not ours", the
+/// conflict dialog never opens, `preserve_existing` stays false, and the
+/// directory is replaced with no backup — the exact loss the uninstall path
+/// already refuses to commit.
+#[test]
+fn detect_status_reports_corrupt_metadata_as_unmanaged_not_absent() {
+    let tree = TempTree::new("detect-corrupt");
+    let dir = tree.at("skills").join("acme");
+    std::fs::create_dir_all(dir.join(".skillhub")).unwrap();
+    std::fs::write(dir.join("SKILL.md"), "# acme\n").unwrap();
+    std::fs::write(metadata_path(&dir), r#"{"slug":"acme"}"#).unwrap();
+
+    let status = detect_status(&dir, Some("1.0.0"));
+
+    assert!(!status.installed);
+    assert!(
+        status.unmanaged,
+        "a directory that exists but is not ours must be reported as unmanaged"
+    );
+    assert_eq!(status.kind, Some(LocationKind::Dir));
+}
+
+#[test]
+fn detect_status_reports_a_missing_entry_as_absent() {
+    let tree = TempTree::new("detect-absent");
+
+    let status = detect_status(&tree.at("skills").join("nope"), Some("1.0.0"));
+
+    assert!(!status.installed);
+    assert!(
+        !status.unmanaged,
+        "nothing there is not the same as not ours"
+    );
+    assert!(status.kind.is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn detect_status_reports_a_dangling_link_as_unmanaged() {
+    let tree = TempTree::new("detect-dangling");
+    let dir = tree.at("skills").join("stale");
+    std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
+    symlink_dir(&tree.at("nowhere"), &dir);
+
+    let status = detect_status(&dir, Some("1.0.0"));
+
+    // `Path::exists()` follows the link and would call this "not installed",
+    // leaving the user with no sign that a broken entry sits in their root.
+    assert!(!status.installed);
+    assert!(status.unmanaged);
+    assert_eq!(status.kind, Some(LocationKind::BrokenSymlink));
 }
 
 #[test]

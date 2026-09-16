@@ -7,7 +7,9 @@ use crate::installer::agents::{display_path, find_agent, skill_dir, validate_slu
 use crate::installer::error::{io_error, network_error, not_found, zip_error, InstallError};
 use crate::installer::homepage::validate_external_url;
 use crate::installer::link::{ensure_under_agent_root, resolve_real_dir};
-use crate::installer::metadata::{backup_dir, has_metadata, write_metadata, InstalledMetadata};
+use crate::installer::metadata::{
+    backup_dir, has_metadata, write_metadata, InstalledMetadata, SIBLING_TAGS,
+};
 
 /// Result of a single install, returned to the web view.
 #[derive(Debug, serde::Serialize)]
@@ -144,6 +146,25 @@ pub fn resolve_install_target(
             // A link to a real directory: the bytes go to the target and the
             // link is left exactly as it was.
             Ok(real) => {
+                // Following a link is how one shared skill serves several
+                // agents, but it is also the only path where the write target is
+                // chosen by the filesystem instead of by us. Everything below —
+                // backup, rename-aside, delete — acts on `real`, so a link
+                // pointing anywhere at all would hand that directory to
+                // `swap_into_place`: `~/.claude/skills/home -> ~` would move the
+                // user's home aside and delete it. Require the target to be a
+                // skill package first, so only a directory that announces itself
+                // as a skill is ever written through.
+                if !is_skill_package(&real) {
+                    return Err(InstallError::new(
+                        "unsafe_link_target",
+                        format!(
+                            "软链接指向的不是技能目录（缺少 {}），已拒绝写入：{}",
+                            crate::installer::frontmatter::SKILL_FILE,
+                            real.display()
+                        ),
+                    ));
+                }
                 warnings.push(format!("已更新该软链接指向的真实目录：{}", real.display()));
                 Ok((real, Predecessor::Directory, warnings))
             }
@@ -259,6 +280,18 @@ fn replace_directory(dir: &Path, source: &Path) -> Result<(), InstallError> {
     }
 }
 
+/// True when `dir` is a skill package: a directory holding a `SKILL.md`.
+///
+/// Strict about `<dir>/SKILL.md` rather than also accepting a nested package
+/// root, because the only job this predicate has is to gate a destructive write
+/// (see [`resolve_install_target`]). The permissive form would accept any
+/// directory that happens to contain one anywhere below it, which is most of a
+/// file system — including the ones this guard exists to keep out.
+fn is_skill_package(dir: &Path) -> bool {
+    dir.join(crate::installer::frontmatter::SKILL_FILE)
+        .is_file()
+}
+
 /// Download a skill zip and install it into the target agent directory.
 ///
 /// The download is requested anonymously (public skills). A per-call `registry`
@@ -345,8 +378,16 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
 /// Derived from the directory name plus a nonce rather than
 /// `with_extension(..)`, which stripped the extension off slugs containing a dot
 /// (`foo.bar` → `foo.tmp-install`) so two different skills could collide.
+///
+/// `tag` must come from [`SIBLING_TAGS`]: the scan filters these names out by
+/// shape, so a tag it does not know comes back as a phantom skill.
 fn unique_sibling(path: &Path, tag: &str) -> PathBuf {
     static NONCE: AtomicU64 = AtomicU64::new(0);
+
+    debug_assert!(
+        SIBLING_TAGS.contains(&tag),
+        "tag {tag:?} is not in SIBLING_TAGS, so the scan would surface it as a skill"
+    );
 
     let nonce = NONCE.fetch_add(1, Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()

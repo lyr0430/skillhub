@@ -2,6 +2,10 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::Path;
 
+/// The file that makes a directory a skill package. Shared so the install guard
+/// and the frontmatter reader cannot drift apart on the name.
+pub const SKILL_FILE: &str = "SKILL.md";
+
 /// How many bytes of `SKILL.md` we are willing to read while hunting for
 /// frontmatter. YAML frontmatter is always at the top of the file, so a bounded
 /// read keeps scanning cheap for large skills and avoids pulling whole files
@@ -15,7 +19,7 @@ const FRONTMATTER_SCAN_BYTES: usize = 8 * 1024;
 /// always a plain `key: value` scalar on a single line, and a full parser would
 /// add a crate (and its supply-chain surface) for one string.
 pub fn read_frontmatter_value(skill_dir: &Path, key: &str) -> Option<String> {
-    let text = read_head(&skill_dir.join("SKILL.md"), FRONTMATTER_SCAN_BYTES)?;
+    let text = read_head(&skill_dir.join(SKILL_FILE), FRONTMATTER_SCAN_BYTES)?;
     extract_value(&text, key)
 }
 

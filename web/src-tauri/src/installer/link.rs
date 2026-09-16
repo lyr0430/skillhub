@@ -22,15 +22,20 @@ pub enum LocationKind {
     Symlink,
     /// A symlink whose target no longer exists.
     BrokenSymlink,
-    /// A symlink we refuse to treat as a skill: it points at a file, or
-    /// `canonicalize` failed for a reason other than a missing target (a
-    /// symlink loop, a permission error).
+    /// Anything else that is not a directory: a symlink we refuse to treat as a
+    /// skill (it points at a file, or `canonicalize` failed for a reason other
+    /// than a missing target — a loop, a permission error), **or a plain file**.
+    /// `is_link()` is therefore a statement about the bucket, not about the
+    /// filesystem; anything destructive must re-check `symlink_metadata`.
     ForeignSymlink,
 }
 
 impl LocationKind {
-    /// True for every variant that is a symlink on disk, i.e. where removing
-    /// the entry must not touch whatever it points at.
+    /// True for the variants that are *usually* a symlink on disk.
+    ///
+    /// Not a substitute for asking the filesystem: `ForeignSymlink` also holds
+    /// plain files, so a destructive caller must re-check `symlink_metadata`
+    /// before unlinking (see [`remove_location`]).
     pub fn is_link(self) -> bool {
         matches!(
             self,
@@ -108,7 +113,16 @@ pub struct LocationRemoval {
 pub fn remove_location(path: &Path, managed: bool) -> Result<LocationRemoval, InstallError> {
     let kind = classify(path)?;
 
-    if kind.is_link() {
+    // Ask the filesystem directly rather than trusting `kind.is_link()`. A plain
+    // file is neither a directory nor a usable link, so `classify` files it under
+    // `ForeignSymlink` too — and unlinking whatever lands in that bucket would
+    // delete a file this crate never actually classified. This is the one
+    // decision in the module that must not rest on a bucket label.
+    let is_link = fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false);
+
+    if is_link {
         let real_path_kept = if kind == LocationKind::Symlink {
             fs::canonicalize(path)
                 .ok()
@@ -124,7 +138,7 @@ pub fn remove_location(path: &Path, managed: bool) -> Result<LocationRemoval, In
         });
     }
 
-    if managed {
+    if managed && kind == LocationKind::Dir {
         fs::remove_dir_all(path).map_err(|err| io_error("卸载失败", &err))?;
         Ok(LocationRemoval {
             removed_kind: kind,
@@ -133,6 +147,7 @@ pub fn remove_location(path: &Path, managed: bool) -> Result<LocationRemoval, In
         })
     } else {
         // Not ours to delete: rename it aside so the user's content survives.
+        // Covers both an unmanaged directory and a plain file at a skill path.
         let backup = backup_dir(path)?;
         Ok(LocationRemoval {
             removed_kind: kind,

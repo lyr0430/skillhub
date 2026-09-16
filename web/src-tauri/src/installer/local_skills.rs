@@ -11,24 +11,10 @@ use crate::installer::homepage::{resolve_homepage, HomepageSource};
 use crate::installer::link::{
     classify, ensure_under_roots, remove_location, LocationKind, LocationRemoval,
 };
-use crate::installer::metadata::{has_metadata, read_metadata};
+use crate::installer::metadata::{has_metadata, is_skillhub_sibling, read_metadata_lenient};
 
 /// The frontmatter key skill authors use to point at their source repository.
 const HOMEPAGE_KEY: &str = "homepage";
-
-/// Our own bookkeeping, left as siblings in a skills root.
-///
-/// `backup_dir` renames an unmanaged directory to `<name>.skillhub-backup-<ts>`
-/// and a failed install can leave `<name>.skillhub-tmp-<pid>-...` behind, both
-/// directly inside the root. Without this they get scanned back as brand-new
-/// unmanaged skills — offering the user an uninstall button for their own backup.
-const BOOKKEEPING_MARKERS: [&str; 2] = [".skillhub-backup-", ".skillhub-tmp-"];
-
-fn is_skillhub_bookkeeping(name: &str) -> bool {
-    BOOKKEEPING_MARKERS
-        .iter()
-        .any(|marker| name.contains(marker))
-}
 
 /// Whether a local skill is one skillhub installed, and therefore one we can
 /// update as well as remove.
@@ -135,8 +121,10 @@ pub fn scan_roots(roots: &[(String, PathBuf)]) -> (Vec<LocalSkill>, Vec<String>)
             if name.starts_with('.') {
                 continue;
             }
-            // So are our own backup and temp siblings (see BOOKKEEPING_MARKERS).
-            if is_skillhub_bookkeeping(name) {
+            // So are our own backup / stash / temp siblings. They sit directly
+            // inside the root and look exactly like a skill, so without this the
+            // scan offers the user an uninstall button for their own backup.
+            if is_skillhub_sibling(name) {
                 continue;
             }
             // Skills roots also collect plain files (README, notes); skip them.
@@ -270,7 +258,7 @@ fn build_skill(entry: &Entry, real: Option<&Path>, location: SkillLocation) -> L
 
     // Metadata we cannot parse counts as unmanaged on purpose: reading it wrong
     // would mean treating someone else's content as ours to delete.
-    let metadata = read_metadata(dir).ok().flatten();
+    let metadata = read_metadata_lenient(dir);
     let origin = if metadata.is_some() {
         SkillOrigin::Managed
     } else {

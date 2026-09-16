@@ -44,15 +44,15 @@ status: draft
 
 ### G1. 本地技能页托管所有本地 skill（不只是本仓库安装的）
 
-- 扫描 agent skill root 下的**全部**条目并按可控性分类，而不是只挑有 metadata 的：
-  - `managed`：有合法 `.skillhub/metadata.json`（skillhub 安装，可更新 / 可卸载）
-  - `unmanaged`：无 metadata 或 metadata 损坏（本地自有 / 第三方来源，只能查看与安全清理）
-  - `broken-link`：悬空链接（只提供「清理失效链接」）
+- 扫描 agent skill root 下的**全部**条目，用**两个正交维度**描述，而不是只挑有 metadata 的：
+  - `origin`（可控性，二值）：`managed` = 有合法 `.skillhub/metadata.json`（可更新 / 可卸载）；`unmanaged` = 无 metadata 或 metadata 损坏（本地自有 / 第三方来源，只能查看与安全清理）。
+  - `kind`（条目形态）：`dir` / `symlink` / `broken-symlink`（悬空链接，只提供「清理失效链接」）/ `foreign-symlink`。
+  - 悬空链接因此是 `origin = unmanaged` + `kind = broken-symlink`，**不是第三种 `origin`**——把形态混进可控性枚举正是链接相关分支会走错的原因。
 - 页面可展示、搜索、打开目录、复制路径；**非受管项的破坏性操作必须与受管项在 UI 上明确区分**（文案 + 二次确认 + 备份语义）。
 
 ### G2. 完整建模并安全处理符号链接
 
-- 扫描时区分 `dir` / `symlink` / `broken-link` / `junction`，并解析真实路径。
+- 扫描时区分 `dir` / `symlink` / `broken-symlink` / `foreign-symlink`（指向文件的链接、链接环、无权限等），并解析真实路径。
 - **卸载只删链接本身**：显式以 `symlink_metadata().file_type().is_symlink()` 判定后 `remove_file`，不依赖 std 隐式行为；真实目录原封不动，结果中返还真实目录位置供 UI 告知用户。
 - **更新写真实位置**：解析到真实目录后，在**真实目录的同级**建临时目录并原子替换，链接保持不变；多个 agent 因共享同一真实目录而同步生效。
 - 以**真实路径**为单位聚合去重：一个技能实体关联多个「位置」（agent + 路径 + 类型），页面显示为一条记录 + 多个 agent 标签，且可只解除其中某一个链接。
