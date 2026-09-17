@@ -50,6 +50,10 @@ export interface LocalSkill {
   homepageSource?: HomepageSource
   /** The entry exists but could not be resolved (permissions, I/O error). */
   unreadable: boolean
+  /** Whether the skill lives in the shared repository (`~/.skillhub/skills/`). */
+  repoManaged?: boolean
+  /** The agents (excluding the synthetic repo id) that link to this repo skill. */
+  linkedAgents?: string[]
 }
 
 /** Payload of `list_installed_skills`. */
@@ -204,6 +208,41 @@ export async function uninstallSkill(
     throw new Error(result.error ?? '卸载失败')
   }
   return result.data ?? { ok: false, dir, removedKind: 'dir' }
+}
+
+/** Result of removing a skill from the shared repository. */
+export interface UninstallRepoResult {
+  ok: boolean
+  /** The repository directory that was removed. */
+  removedDir: string
+  /** The agent links that were removed first, one per agent id. */
+  removedLinks: string[]
+  /** Set when a real directory was not installed by skillhub and was renamed
+   *  aside (backed up) rather than deleted. */
+  backupDir?: string
+  /** Set when a link could not be removed; the directory is left in place. */
+  warnings: string[]
+}
+
+/**
+ * Remove a skill from the shared repository — its real directory plus every
+ * agent link pointing at it. Unlike `uninstallSkill`, this removes the
+ * repository item itself, so all linked agents lose the skill at once. The UI
+ * confirms before calling, listing the affected agents.
+ * Returns `null` when not running inside the desktop app.
+ */
+export async function uninstallRepoSkill(slug: string): Promise<UninstallRepoResult | null> {
+  const result = await invokeTauri<CommandResult<UninstallRepoResult>>(
+    'uninstall_repo_skill_command',
+    { slug },
+  )
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '卸载失败')
+  }
+  return result.data ?? { ok: false, removedDir: '', removedLinks: [], warnings: [] }
 }
 
 /** Payload accepted by the desktop `attach_skill_to_agent_command`. */

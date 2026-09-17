@@ -2150,7 +2150,20 @@
     "attachModeNote": "Will be added using the current setting, “{{mode}}”. Change it in the settings menu at the top right.",
     "attachConfirm": "Add",
     "attachSuccess": "Added",
-    "attachError": "Could not add"
+    "attachError": "Could not add",
+    "repoCategory": "Repository",
+    "refBadge": "Referenced by {{count}} agents",
+    "referencedBy": "Referenced by:",
+    "repoUninstall": "Uninstall from repo",
+    "repoUninstallTitle": "Remove skill from repository",
+    "repoUninstallDesc": "This removes the real directory at {{dir}} and detaches every agent link pointing at it. It affects {{skill}}. Continue?",
+    "repoUninstallAffected": "Will detach links from {{count}} agents:",
+    "repoUninstallConfirm": "Uninstall",
+    "repoUninstallSuccess": "Removed from repository",
+    "repoUninstallRemoved": "Detached agent links: {{agents}}",
+    "repoUninstallError": "Failed to uninstall from repository",
+    "refBadgeSingle": "Referenced by 1 agent",
+    "repoUninstallBackup": "The directory was not installed from this registry; it was backed up to {{dir}}"
   },
   "settings": {
     "open": "Settings",

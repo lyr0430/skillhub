@@ -11,10 +11,12 @@ pub mod metadata;
 #[cfg(test)]
 mod attach_tests;
 #[cfg(test)]
-mod installer_tests;
-#[cfg(test)]
 mod install_mode_tests;
 #[cfg(test)]
+mod installer_tests;
+#[cfg(test)]
 mod local_skill_tests;
+#[cfg(test)]
+mod repo_display_tests;
 #[cfg(test)]
 mod test_support;

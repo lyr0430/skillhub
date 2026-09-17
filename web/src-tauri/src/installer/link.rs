@@ -157,6 +157,67 @@ pub fn remove_location(path: &Path, managed: bool) -> Result<LocationRemoval, In
     }
 }
 
+/// Find every agent link across the given roots whose canonical target is the
+/// real directory `target`.
+///
+/// Returns `(agent_id, link_path)` pairs. Each link is classified and
+/// canonicalized (never followed for a write), so only genuine symlinks
+/// resolving to `target` are found — a dangling link or a link to something
+/// else is not a link *to* `target`.
+///
+/// Roots are `(agent_id, root)` pairs (the same shape `scan_roots` uses) so the
+/// reported agent id is the one that owns the link, never a misalignment from
+/// zipping paths against the static profile list.
+///
+/// Discovery failures (an unreadable root, an entry that cannot be classified)
+/// are surfaced in the second tuple element rather than silently swallowed: on
+/// the repository-uninstall path this is what keeps `remove_dir_all` from
+/// deleting a directory while a real link was missed, which would leave that
+/// link dangling.
+pub fn find_links_to_target_under(
+    target: &Path,
+    agent_roots: &[(String, PathBuf)],
+) -> (Vec<(String, PathBuf)>, Vec<String>) {
+    let Ok(canonical_target) = fs::canonicalize(target) else {
+        return (Vec::new(), Vec::new());
+    };
+
+    let mut found: Vec<(String, PathBuf)> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    for (agent, root) in agent_roots {
+        let entries = match fs::read_dir(root) {
+            Ok(iter) => iter,
+            Err(_) => {
+                // A missing root is not exceptional — that agent is not installed
+                // here. Anything else (permission) means we cannot be sure we saw
+                // every link, so say so.
+                if root.exists() {
+                    warnings.push(format!("无法读取 {agent} 目录: {}", root.display()));
+                }
+                continue;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let kind = match classify(&path) {
+                Ok(kind) => kind,
+                Err(_) => {
+                    warnings.push(format!("无法读取 {agent} 条目: {}", path.display()));
+                    continue;
+                }
+            };
+            if kind != LocationKind::Symlink {
+                continue;
+            }
+            match fs::canonicalize(&path) {
+                Ok(real) if real == canonical_target => found.push((agent.clone(), path)),
+                _ => {}
+            }
+        }
+    }
+    (found, warnings)
+}
+
 /// Normalize `path` and assert it is a removable entry sitting directly inside
 /// one of the known agent skill roots.
 ///
@@ -274,8 +335,8 @@ pub struct LinkCreation {
 pub fn create_link(target: &Path, source: &Path) -> Result<LinkCreation, InstallError> {
     // `symlink_metadata` on purpose: `is_dir()` follows links, and a link here
     // would violate the "source is a real directory" contract this relies on.
-    let source_meta = fs::symlink_metadata(source)
-        .map_err(|err| io_error("读取共享目录状态", &err))?;
+    let source_meta =
+        fs::symlink_metadata(source).map_err(|err| io_error("读取共享目录状态", &err))?;
     if !source_meta.file_type().is_dir() {
         return Err(InstallError::new(
             "not_a_directory",

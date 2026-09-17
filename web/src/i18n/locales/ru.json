@@ -2152,7 +2152,20 @@
     "attachModeNote": "Будет добавлено способом «{{mode}}» из текущих настроек. Изменить можно в меню настроек справа вверху.",
     "attachConfirm": "Добавить",
     "attachSuccess": "Добавлено",
-    "attachError": "Не удалось добавить"
+    "attachError": "Не удалось добавить",
+    "repoCategory": "Репозиторий",
+    "refBadge": "Цитируется {{count}} агентами",
+    "referencedBy": "Цитируется:",
+    "repoUninstall": "Удалить из репозитория",
+    "repoUninstallTitle": "Удалить навык из репозитория",
+    "repoUninstallDesc": "Будет удалён настоящий каталог {{dir}} и отключены все ссылки агентов на него. Это затронет {{skill}}. Продолжить?",
+    "repoUninstallAffected": "Будут отключены ссылки от {{count}} агентов:",
+    "repoUninstallConfirm": "Удалить",
+    "repoUninstallSuccess": "Удалено из репозитория",
+    "repoUninstallRemoved": "Отключены ссылки агентов: {{agents}}",
+    "repoUninstallError": "Не удалось удалить из репозитория",
+    "refBadgeSingle": "Цитируется 1 агентом",
+    "repoUninstallBackup": "Каталог не был установлен из этого реестра; он сохранён в {{dir}}"
   },
   "settings": {
     "open": "Настройки",

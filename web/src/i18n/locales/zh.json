@@ -2149,7 +2149,20 @@
     "attachModeNote": "将按当前设置「{{mode}}」的方式添加，可在右上角设置中修改。",
     "attachConfirm": "添加",
     "attachSuccess": "已添加",
-    "attachError": "添加失败"
+    "attachError": "添加失败",
+    "repoCategory": ".skillhub 仓库",
+    "refBadge": "被 {{count}} 个 Agent 引用",
+    "referencedBy": "被引用：",
+    "repoUninstall": "从仓库卸载",
+    "repoUninstallTitle": "从仓库卸载技能",
+    "repoUninstallDesc": "将删除仓库真实目录 {{dir}}，并解除所有指向它的 Agent 链接。此操作会影响 {{skill}}，确定继续吗？",
+    "repoUninstallAffected": "将解除以下 {{count}} 个 Agent 的链接：",
+    "repoUninstallConfirm": "确认卸载",
+    "repoUninstallSuccess": "已从仓库卸载",
+    "repoUninstallRemoved": "已解除 Agent 链接：{{agents}}",
+    "repoUninstallError": "从仓库卸载失败",
+    "refBadgeSingle": "被 1 个 Agent 引用",
+    "repoUninstallBackup": "原目录不是本仓库安装的，已备份到 {{dir}}"
   },
   "settings": {
     "open": "设置",

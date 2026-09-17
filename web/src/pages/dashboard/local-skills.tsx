@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, Search } from 'lucide-react'
+import { AlertTriangle, FolderGit2, Search } from 'lucide-react'
 import { toast } from '@/shared/lib/toast'
 import { isTauri } from '@/shared/lib/tauri'
 import { copyToClipboard } from '@/shared/lib/clipboard'
@@ -25,6 +25,7 @@ import {
   detectAgents,
   listInstalledSkills,
   uninstallSkill,
+  uninstallRepoSkill,
   installSkill,
   openInFileManager,
   openExternalUrl,
@@ -37,6 +38,9 @@ import { resolveSkillVersion } from '@/api/client'
 import { resolveInstallMode } from '@/shared/lib/install-mode'
 
 const PAGE_SIZE = 8
+
+/** Synthetic category id for the shared skill repository (`~/.skillhub`). */
+const REPO_CATEGORY_ID = '.skillhub'
 
 /** i18n key describing what removing a location of this kind actually does. */
 function removalEffectKey(location: SkillLocation): string {
@@ -62,6 +66,8 @@ export function LocalSkillsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmSkill, setConfirmSkill] = useState<LocalSkill | null>(null)
   const [confirmLocation, setConfirmLocation] = useState<SkillLocation | null>(null)
+  /** .skillhub category: the skill the user is about to remove from the repo. */
+  const [confirmRepoSkill, setConfirmRepoSkill] = useState<LocalSkill | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [attachSkill, setAttachSkill] = useState<LocalSkill | null>(null)
@@ -108,11 +114,19 @@ export function LocalSkillsPage() {
 
   const openConfirm = (skill: LocalSkill) => {
     setConfirmSkill(skill)
-    // With more than one location the choice is consequential — detaching one
-    // agent's link versus deleting the real directory every agent shares — so
-    // nothing is preselected and the confirm button stays disabled until the
-    // user actually picks.
-    setConfirmLocation(skill.locations.length === 1 ? skill.locations[0] : null)
+    // `.skillhub` is a display-only classifier, not a removable agent slot: it
+    // represents the shared repository's real directory, which only the
+    // repo-category uninstall removes. It must never appear as a selectable
+    // location here — picking it would send a repo path to `uninstallSkill`,
+    // which `ensure_under_agent_root` rejects.
+    const agentLocations = skill.locations.filter(
+      (location) => location.agent !== REPO_CATEGORY_ID,
+    )
+    // With more than one real agent location the choice is consequential —
+    // detaching one agent's link versus deleting the real directory every agent
+    // shares — so nothing is preselected and the confirm button stays disabled
+    // until the user actually picks.
+    setConfirmLocation(agentLocations.length === 1 ? agentLocations[0] : null)
   }
 
   const closeConfirm = () => {
@@ -144,8 +158,46 @@ export function LocalSkillsPage() {
     }
   }
 
+  /** Remove a skill from the shared repository: real dir + all its agent links. */
+  const handleRepoUninstall = async (skill: LocalSkill) => {
+    setBusyId(`repo:${skill.slug}`)
+    try {
+      const result = await uninstallRepoSkill(skill.slug)
+      if (result === null) return
+      if (!result.ok) {
+        toast.error(
+          t('localSkills.repoUninstallError'),
+          result.warnings.join(' · ') || undefined,
+        )
+        return
+      }
+      const linked = skill.linkedAgents ?? []
+      // A hand-placed repo directory (no skillhub metadata) is renamed aside, not
+      // deleted — say so, mirroring the per-agent uninstall wording.
+      const detail = result.backupDir
+        ? t('localSkills.repoUninstallBackup', { dir: result.backupDir })
+        : linked.length > 0
+          ? t('localSkills.repoUninstallRemoved', { agents: linked.join(' · ') })
+          : undefined
+      toast.success(t('localSkills.repoUninstallSuccess'), detail)
+      await refresh({ silent: true })
+    } catch (err) {
+      toast.error(
+        t('localSkills.repoUninstallError'),
+        err instanceof Error ? err.message : undefined,
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const handleUpdate = async (skill: LocalSkill) => {
-    const location = skill.locations[0]
+    // `.skillhub` is a display-only classifier, never a real install target. It
+    // sorts first in `locations` (`.` < letters), so pick the first *real* agent
+    // location to update through — the update writes to the real directory
+    // either way (via `resolve_install_target`), so any agent entry that shares
+    // the directory is equivalent.
+    const location = skill.locations.find((candidate) => candidate.agent !== REPO_CATEGORY_ID)
     if (!location) return
     setBusyId(`${location.agent}:${location.path}`)
     const registry = skill.registry || getBaseUrl()
@@ -286,6 +338,9 @@ export function LocalSkillsPage() {
 
   // Skills reachable from the selected agent (or all of them when none is picked).
   const visibleSkills = useMemo(() => {
+    if (selectedAgent === REPO_CATEGORY_ID) {
+      return skills.filter((skill) => skill.repoManaged)
+    }
     if (!selectedAgent) return skills
     return skills.filter((skill) =>
       skill.locations.some((location) => location.agent === selectedAgent),
@@ -340,9 +395,32 @@ export function LocalSkillsPage() {
     <div className="space-y-8 animate-fade-up">
       <DashboardPageHeader title={t('localSkills.title')} subtitle={t('localSkills.subtitle')} />
 
-      {/* Agent filter. "All" leads, because a skill shared between agents has
-          more than one home and hiding it behind an agent filter would be a lie. */}
+      {/* Agent filter. ".skillhub" leads (the shared repository is semantically
+          most important), then "All". A skill shared between agents has more
+          than one home, so hiding it behind an agent filter would be a lie. */}
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          data-testid="local-agent-.skillhub"
+          onClick={() => {
+            setSelectedAgent(REPO_CATEGORY_ID)
+            setPage(0)
+          }}
+          aria-pressed={selectedAgent === REPO_CATEGORY_ID}
+          aria-label={t('localSkills.repoCategory')}
+          className={cn(
+            'flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors',
+            selectedAgent === REPO_CATEGORY_ID
+              ? 'border-primary/60 bg-primary/10'
+              : 'border-border/60 bg-muted/40 hover:bg-muted/70',
+          )}
+        >
+          <FolderGit2 className="h-[18px] w-[18px]" />
+          <span className="text-sm font-medium text-foreground">
+            {t('localSkills.repoCategory')}
+          </span>
+        </button>
+
         <button
           type="button"
           data-testid="local-agent-all"
@@ -431,15 +509,23 @@ export function LocalSkillsPage() {
                   <LocalSkillCard
                     key={skill.realPath ?? `${skill.slug}:${skill.locations[0]?.path ?? ''}`}
                     skill={skill}
-                    busy={skill.locations.some(
-                      (location) => busyId === `${location.agent}:${location.path}`,
-                    )}
+                    busy={
+                      busyId === `repo:${skill.slug}` ||
+                      skill.locations.some(
+                        (location) => busyId === `${location.agent}:${location.path}`,
+                      )
+                    }
                     onCopyPath={handleCopyPath}
                     onOpenFolder={handleOpenFolder}
                     onOpenHomepage={handleOpenHomepage}
                     onUninstall={openConfirm}
                     onUpdate={handleUpdate}
                     onAttach={openAttach}
+                    onRepoUninstall={
+                      selectedAgent === REPO_CATEGORY_ID
+                        ? (skillToRemove) => setConfirmRepoSkill(skillToRemove)
+                        : undefined
+                    }
                     attachTargetCount={attachCandidates(skill).length}
                   />
                 ))}
@@ -471,37 +557,41 @@ export function LocalSkillsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {confirmSkill && confirmSkill.locations.length > 1 && (
-            <div className="space-y-2">
-              <p className="text-sm text-foreground">{t('localSkills.chooseLocation')}</p>
-              {confirmSkill.locations.map((location) => (
-                <label
-                  key={location.path}
-                  data-testid={`local-location-${location.agent}`}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors',
-                    confirmLocation?.path === location.path
-                      ? 'border-primary/60 bg-primary/10'
-                      : 'border-border/60 bg-muted/30 hover:bg-muted/60',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="local-skill-location"
-                    className="mt-0.5"
-                    checked={confirmLocation?.path === location.path}
-                    onChange={() => setConfirmLocation(location)}
-                  />
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">{location.agent}</span>
-                    <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
-                      {location.path}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
+          {confirmSkill &&
+            confirmSkill.locations.filter((location) => location.agent !== REPO_CATEGORY_ID).length >
+              1 && (
+              <div className="space-y-2">
+                <p className="text-sm text-foreground">{t('localSkills.chooseLocation')}</p>
+                {confirmSkill.locations
+                  .filter((location) => location.agent !== REPO_CATEGORY_ID)
+                  .map((location) => (
+                    <label
+                      key={location.path}
+                      data-testid={`local-location-${location.agent}`}
+                      className={cn(
+                        'flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors',
+                        confirmLocation?.path === location.path
+                          ? 'border-primary/60 bg-primary/10'
+                          : 'border-border/60 bg-muted/30 hover:bg-muted/60',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="local-skill-location"
+                        className="mt-0.5"
+                        checked={confirmLocation?.path === location.path}
+                        onChange={() => setConfirmLocation(location)}
+                      />
+                      <span className="min-w-0">
+                        <span className="font-medium text-foreground">{location.agent}</span>
+                        <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                          {location.path}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+              </div>
+            )}
 
           {confirmLocation && (
             <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
@@ -528,6 +618,68 @@ export function LocalSkillsPage() {
               }}
             >
               {t('localSkills.uninstallConfirm')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Repository uninstall has a distinct, more consequential outcome than
+          the per-agent one: it deletes the real directory and every agent link. */}
+      <AlertDialog
+        open={confirmRepoSkill !== null}
+        onOpenChange={(next) => !next && setConfirmRepoSkill(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('localSkills.repoUninstallTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmRepoSkill &&
+                t('localSkills.repoUninstallDesc', {
+                  skill: confirmRepoSkill.namespace
+                    ? `@${confirmRepoSkill.namespace}/${confirmRepoSkill.slug}`
+                    : confirmRepoSkill.slug,
+                  dir: confirmRepoSkill.realPath ?? '',
+                })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {confirmRepoSkill && (confirmRepoSkill.linkedAgents?.length ?? 0) > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm text-foreground">
+                {t('localSkills.repoUninstallAffected', {
+                  count: confirmRepoSkill.linkedAgents?.length ?? 0,
+                })}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {(confirmRepoSkill.linkedAgents ?? []).map((agent) => (
+                  <span
+                    key={agent}
+                    data-testid={`repo-affected-${agent}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2 py-1"
+                  >
+                    <AgentBrandIcon id={agent} size={14} />
+                    <span className="text-xs font-medium text-foreground">{agent}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmRepoSkill(null)}>
+              {t('localSkills.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              data-testid="confirm-repo-uninstall"
+              onClick={async () => {
+                const skill = confirmRepoSkill
+                setConfirmRepoSkill(null)
+                if (skill) await handleRepoUninstall(skill)
+              }}
+            >
+              {t('localSkills.repoUninstallConfirm')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

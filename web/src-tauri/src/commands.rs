@@ -6,7 +6,9 @@ use crate::installer::attach::{attach_skill_to_agent, AttachResult};
 use crate::installer::homepage::validate_external_url;
 use crate::installer::install::{install_skill, InstallInput, InstallMode, InstallResult};
 use crate::installer::link::LocationKind;
-use crate::installer::local_skills::{scan_local_skills, uninstall_location, LocalSkill};
+use crate::installer::local_skills::{
+    scan_local_skills, uninstall_location, uninstall_repo_skill, LocalSkill, UninstallRepoResult,
+};
 use crate::installer::metadata::{detect_status, SkillStatus};
 
 /// Result wrapper returned to the web view by commands.
@@ -203,6 +205,23 @@ pub async fn uninstall_skill_command(
         Ok(Ok(res)) => CommandResult::success(res),
         Ok(Err(err)) => CommandResult::failure(err.message),
         Err(join_err) => CommandResult::failure(format!("卸载任务执行失败: {join_err}")),
+    }
+}
+
+/// Tauri command: remove a skill from the shared repository.
+///
+/// Deletes the real directory at `~/.skillhub/skills/<slug>` plus every agent
+/// link pointing at it. Unlike [`uninstall_skill_command`], this removes the
+/// repository item itself, so all linked agents lose the skill at once. The
+/// web view confirms before calling, listing the affected agents.
+#[tauri::command]
+pub async fn uninstall_repo_skill_command(slug: String) -> CommandResult<UninstallRepoResult> {
+    let result = tauri::async_runtime::spawn_blocking(move || uninstall_repo_skill(&slug)).await;
+
+    match result {
+        Ok(Ok(res)) => CommandResult::success(res),
+        Ok(Err(err)) => CommandResult::failure(err.message),
+        Err(join_err) => CommandResult::failure(format!("仓库卸载任务执行失败: {join_err}")),
     }
 }
 

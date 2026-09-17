@@ -84,6 +84,12 @@ const hoisted = vi.hoisted(() => {
     realDir: '/home/u/.claude/skills/video-frames',
     warnings: [],
   })
+  const uninstallRepoSkill = vi.fn().mockResolvedValue({
+    ok: true,
+    removedDir: '/home/u/.skillhub/skills/video-frames',
+    removedLinks: ['claude-code'],
+    warnings: [],
+  })
   const resolveSkillVersion = vi
     .fn()
     .mockResolvedValue({ namespace: 'global', slug: 'video-frames', version: '2.0.0' })
@@ -98,6 +104,7 @@ const hoisted = vi.hoisted(() => {
     listInstalledSkills,
     installSkill,
     uninstallSkill,
+    uninstallRepoSkill,
     attachSkillToAgent,
     resolveSkillVersion,
     openInFileManager,
@@ -110,6 +117,7 @@ vi.mock('@/features/skill/tauri-installer', () => ({
   detectAgents: vi.fn().mockImplementation(() => Promise.resolve(hoisted.state.agents)),
   listInstalledSkills: hoisted.listInstalledSkills,
   uninstallSkill: hoisted.uninstallSkill,
+  uninstallRepoSkill: hoisted.uninstallRepoSkill,
   installSkill: hoisted.installSkill,
   attachSkillToAgent: hoisted.attachSkillToAgent,
   openInFileManager: hoisted.openInFileManager,
@@ -401,6 +409,47 @@ describe('local-skills', () => {
     })
   })
 
+  // Regression: a symlinked skill in one agent (e.g. `@global/zero-slop` in
+  // `openclaw` pointing into `.skillhub`) must not offer the shared repository
+  // directory as a selectable location in the per-agent uninstall dialog. The
+  // `.skillhub` real dir is removed only by the repo-category uninstall; a
+  // per-agent uninstall just detaches that agent's link.
+  it('does not offer the .skillhub repo as a location in the per-agent uninstall dialog', async () => {
+    hoisted.state.skills = [
+      managed({
+        slug: 'zero-slop',
+        namespace: undefined,
+        realPath: '/home/u/.skillhub/skills/zero-slop',
+        repoManaged: true,
+        linkedAgents: ['openclaw'],
+        locations: [
+          { agent: '.skillhub', path: '/home/u/.skillhub/skills/zero-slop', kind: 'dir' },
+          { agent: 'openclaw', path: '/home/u/.openclaw/skills/zero-slop', kind: 'symlink' },
+        ],
+      }),
+    ]
+    const { getByTestId, queryByTestId, getByText } = renderDesktop()
+
+    await waitFor(() => expect(getByText('zero-slop')).toBeTruthy())
+    fireEvent.click(getByTestId('local-uninstall-zero-slop'))
+
+    // The `.skillhub` repo is never offered as a selectable location.
+    expect(queryByTestId('local-location-.skillhub')).toBeNull()
+    // There is exactly one real agent location (openclaw), so the dialog shows
+    // no location chooser and is ready to confirm immediately.
+    expect(queryByTestId('local-location-openclaw')).toBeNull()
+    const confirm = getByTestId('confirm-uninstall') as HTMLButtonElement
+    expect(confirm.disabled).toBe(false)
+
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(hoisted.uninstallSkill).toHaveBeenCalledWith(
+        '/home/u/.openclaw/skills/zero-slop',
+        'openclaw',
+      )
+    })
+  })
+
   it('explains that an unmanaged directory is backed up, not deleted', async () => {
     hoisted.state.skills = [
       managed({
@@ -605,6 +654,176 @@ describe('local-skills', () => {
       expect(hoisted.attachSkillToAgent).toHaveBeenCalledTimes(2)
       // The dialog closes and the page still refreshes.
       expect(hoisted.listInstalledSkills).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('.skillhub repository category', () => {
+    const repoSkill = (overrides: Partial<LocalSkill> = {}): LocalSkill =>
+      managed({
+        slug: 'weather',
+        namespace: undefined,
+        realPath: '/home/u/.skillhub/skills/weather',
+        repoManaged: true,
+        linkedAgents: ['claude-code', 'codex'],
+        locations: [
+          { agent: 'claude-code', path: '/home/u/.claude/skills/weather', kind: 'symlink' },
+          { agent: 'codex', path: '/home/u/.codex/skills/weather', kind: 'symlink' },
+          { agent: '.skillhub', path: '/home/u/.skillhub/skills/weather', kind: 'dir' },
+        ],
+        ...overrides,
+      })
+
+    it('renders the .skillhub category first', async () => {
+      const { getByTestId } = renderDesktop()
+      await waitFor(() => expect(getByTestId('local-agent-all')).toBeTruthy())
+
+      const repoButton = getByTestId('local-agent-.skillhub')
+      const allButton = getByTestId('local-agent-all')
+      // The repo category is rendered before "all" in the DOM.
+      expect(
+        repoButton.compareDocumentPosition(allButton) &
+          (window.Node.DOCUMENT_POSITION_FOLLOWING),
+      ).toBeTruthy()
+    })
+
+    it('filters the list to repo-managed skills when selected', async () => {
+      hoisted.state.skills = [
+        repoSkill(),
+        managed({
+          slug: 'local-only',
+          namespace: undefined,
+          realPath: '/home/u/.claude/skills/local-only',
+        }),
+      ]
+      const { getByTestId, getByText, queryByText } = renderDesktop()
+
+      await waitFor(() => expect(getByText('weather')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+
+      // Only the repo-managed skill is shown.
+      expect(getByText('weather')).toBeTruthy()
+      expect(queryByText('local-only')).toBeNull()
+    })
+
+    it('shows an empty state when the repo category has no skills', async () => {
+      hoisted.state.skills = [
+        managed({ slug: 'local-only', namespace: undefined }),
+      ]
+      const { getByTestId, getByText } = renderDesktop()
+
+      await waitFor(() => expect(getByText('local-only')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+
+      expect(getByText('localSkills.empty')).toBeTruthy()
+    })
+
+    it('shows a ref badge and the linked agents on a repo skill card', async () => {
+      hoisted.state.skills = [repoSkill()]
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-agent-.skillhub')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+
+      await waitFor(() => expect(getByTestId('local-ref-badge-weather')).toBeTruthy())
+      // The linked agents line lists who shares the skill.
+      expect(getByTestId('local-linked-agents-weather')).toBeTruthy()
+    })
+
+    it('opens a repo-uninstall confirm dialog listing affected agents', async () => {
+      hoisted.state.skills = [repoSkill()]
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-agent-.skillhub')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+      await waitFor(() => expect(getByTestId('local-repo-uninstall-weather')).toBeTruthy())
+      fireEvent.click(getByTestId('local-repo-uninstall-weather'))
+
+      // The dialog shows the affected agents.
+      expect(getByTestId('repo-affected-claude-code')).toBeTruthy()
+      expect(getByTestId('repo-affected-codex')).toBeTruthy()
+    })
+
+    it('does not call uninstallRepoSkill when the confirm dialog is cancelled', async () => {
+      hoisted.state.skills = [repoSkill()]
+      const { getByTestId, getByText } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-agent-.skillhub')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+      await waitFor(() => expect(getByTestId('local-repo-uninstall-weather')).toBeTruthy())
+      fireEvent.click(getByTestId('local-repo-uninstall-weather'))
+      fireEvent.click(getByText('localSkills.cancel'))
+
+      expect(hoisted.uninstallRepoSkill).not.toHaveBeenCalled()
+    })
+
+    it('calls uninstallRepoSkill with the slug and refreshes on confirm', async () => {
+      hoisted.state.skills = [repoSkill()]
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-agent-.skillhub')).toBeTruthy())
+      fireEvent.click(getByTestId('local-agent-.skillhub'))
+      await waitFor(() => expect(getByTestId('local-repo-uninstall-weather')).toBeTruthy())
+      fireEvent.click(getByTestId('local-repo-uninstall-weather'))
+      fireEvent.click(getByTestId('confirm-repo-uninstall'))
+
+      await waitFor(() => {
+        expect(hoisted.uninstallRepoSkill).toHaveBeenCalledWith('weather')
+      })
+      await waitFor(() => expect(hoisted.toastSuccess).toHaveBeenCalled())
+      // The list re-scans silently after removal.
+      expect(hoisted.listInstalledSkills).toHaveBeenCalledTimes(2)
+    })
+
+    it('renders the .skillhub category button even though it is not an install target', async () => {
+      // The category button renders on the page with its own icon.
+      const { getByTestId } = renderDesktop()
+      await waitFor(() => expect(getByTestId('local-agent-.skillhub')).toBeTruthy())
+      expect(getByTestId('local-agent-.skillhub').textContent).toContain(
+        'localSkills.repoCategory',
+      )
+
+      // The install dialog's agent list comes from detectAgents(), which never
+      // includes .skillhub — it is a display-only classifier, never installable.
+      const targets = hoisted.state.agents
+      expect(targets.every((agent) => agent.id !== '.skillhub')).toBe(true)
+    })
+
+    // Regression: `.skillhub` sorts before letters in `locations`, so a naive
+    // `locations[0]` would pick it as the update target and send a repo path that
+    // `ensure_under_agent_root` rejects. Update must prefer a real agent location.
+    it('updates a shared skill through a real agent, not the .skillhub classifier', async () => {
+      hoisted.state.skills = [
+        managed({
+          slug: 'weather',
+          namespace: 'global',
+          version: '1.0.0',
+          realPath: '/home/u/.skillhub/skills/weather',
+          repoManaged: true,
+          linkedAgents: ['claude-code', 'codex'],
+          // `.skillhub` location is first, mirroring the aggregated sort order.
+          locations: [
+            { agent: '.skillhub', path: '/home/u/.skillhub/skills/weather', kind: 'dir' },
+            { agent: 'claude-code', path: '/home/u/.claude/skills/weather', kind: 'symlink' },
+          ],
+        }),
+      ]
+      const { getByTestId } = renderDesktop()
+      await waitFor(() => expect(getByTestId('local-update-weather')).toBeTruthy())
+
+      fireEvent.click(getByTestId('local-update-weather'))
+
+      await waitFor(() => {
+        expect(hoisted.installSkill).toHaveBeenCalledWith(
+          expect.objectContaining({
+            agent: 'claude-code',
+            dir: '/home/u/.claude/skills/weather',
+          }),
+          expect.any(String),
+        )
+      })
+      // Never picks `.skillhub` as the update agent.
+      const call = hoisted.installSkill.mock.calls[0][0]
+      expect(call.agent).not.toBe('.skillhub')
     })
   })
 })

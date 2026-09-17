@@ -20,6 +20,12 @@ interface LocalSkillCardProps {
   onUninstall: (skill: LocalSkill) => void
   onUpdate: (skill: LocalSkill) => void
   onAttach: (skill: LocalSkill) => void
+  /**
+   * Remove the skill from the shared repository (real dir + all links). Only
+   * wired when the card is rendered under the `.skillhub` category, where the
+   * uninstall semantics differ from the per-agent uninstall.
+   */
+  onRepoUninstall?: (skill: LocalSkill) => void
 }
 
 /** i18n key suffix for each on-disk shape, used for the location chip. */
@@ -56,6 +62,7 @@ export function LocalSkillCard({
   onUninstall,
   onUpdate,
   onAttach,
+  onRepoUninstall,
 }: LocalSkillCardProps) {
   const { t } = useTranslation()
 
@@ -66,6 +73,8 @@ export function LocalSkillCard({
   // writes land elsewhere, so the count is worth surfacing on the title.
   const symlinkCount = skill.locations.filter((location) => location.kind === 'symlink').length
   const path = skill.realPath ?? skill.locations[0]?.path ?? ''
+  const linkedAgents = skill.linkedAgents ?? []
+  const isRepoItem = skill.repoManaged ?? false
 
   return (
     <Card className={cn('p-4', broken && 'border-dashed')}>
@@ -88,6 +97,20 @@ export function LocalSkillCard({
                 {symlinkCount > 1
                   ? t('localSkills.symlinkBadgeCount', { count: symlinkCount })
                   : t('localSkills.kindSymlink')}
+              </span>
+            )}
+
+            {/* Reference badge: a shared skill, shown when agents link to it.
+                Same shape as the symlink badge but conceptually "who uses this". */}
+            {linkedAgents.length > 0 && (
+              <span
+                data-testid={`local-ref-badge-${skill.slug}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-600 ring-1 ring-inset ring-sky-500/30 dark:text-sky-400"
+              >
+                <Link2 className="h-3 w-3" />
+                {linkedAgents.length > 1
+                  ? t('localSkills.refBadge', { count: linkedAgents.length })
+                  : t('localSkills.refBadgeSingle')}
               </span>
             )}
 
@@ -161,6 +184,29 @@ export function LocalSkillCard({
             })}
           </div>
 
+          {/* For a repository skill, list the agents that link to it, so the user
+              can see who shares it before removing it. */}
+          {isRepoItem && linkedAgents.length > 0 && (
+            <div
+              className="mt-2 flex flex-wrap items-center gap-2"
+              data-testid={`local-linked-agents-${skill.slug}`}
+            >
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {t('localSkills.referencedBy')}
+              </span>
+              {linkedAgents.map((agent, index) => (
+                <span
+                  key={agent}
+                  className="inline-flex items-center gap-1 text-xs text-foreground"
+                >
+                  {index > 0 && <span className="text-muted-foreground">·</span>}
+                  <AgentBrandIcon id={agent} size={14} />
+                  <span>{agent}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {path && (
             <p className="mt-2 truncate font-mono text-xs text-muted-foreground">{path}</p>
           )}
@@ -215,17 +261,34 @@ export function LocalSkillCard({
               {t('localSkills.attach')}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid={`local-uninstall-${skill.slug}`}
-            disabled={busy}
-            onClick={() => onUninstall(skill)}
-          >
-            <Trash2 className="h-4 w-4" />
-            {broken ? t('localSkills.cleanupLink') : t('localSkills.uninstall')}
-          </Button>
+          {/* Under the `.skillhub` category, uninstall means "remove from the
+              repository" (real dir + all links) — a distinct, more destructive
+              action that the category wires in explicitly. */}
+          {onRepoUninstall ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`local-repo-uninstall-${skill.slug}`}
+              disabled={busy}
+              onClick={() => onRepoUninstall(skill)}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('localSkills.repoUninstall')}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`local-uninstall-${skill.slug}`}
+              disabled={busy}
+              onClick={() => onUninstall(skill)}
+            >
+              <Trash2 className="h-4 w-4" />
+              {broken ? t('localSkills.cleanupLink') : t('localSkills.uninstall')}
+            </Button>
+          )}
           {/* Update needs a source to update from, which only a managed install
               has; an unmanaged skill gets the reason as a tooltip instead. */}
           {managed ? (

@@ -24,6 +24,7 @@ pub fn run() {
             commands::install_skill_command,
             commands::attach_skill_to_agent_command,
             commands::uninstall_skill_command,
+            commands::uninstall_repo_skill_command,
             commands::open_directory,
             commands::open_external_url
         ])

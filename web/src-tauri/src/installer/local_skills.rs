@@ -4,17 +4,28 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::installer::agents::{profile_root, AGENT_PROFILES};
-use crate::installer::error::InstallError;
+use crate::installer::agents::{profile_root, repo_root, validate_slug, AGENT_PROFILES};
+use crate::installer::error::{io_error, InstallError};
 use crate::installer::frontmatter::read_frontmatter_value;
 use crate::installer::homepage::{resolve_homepage, HomepageSource};
 use crate::installer::link::{
-    classify, ensure_under_roots, remove_location, LocationKind, LocationRemoval,
+    classify, ensure_under_roots, find_links_to_target_under, remove_location, LocationKind,
+    LocationRemoval,
 };
-use crate::installer::metadata::{has_metadata, is_skillhub_sibling, read_metadata_lenient};
+use crate::installer::metadata::{
+    backup_dir, has_metadata, is_skillhub_sibling, read_metadata_lenient,
+};
 
 /// The frontmatter key skill authors use to point at their source repository.
 const HOMEPAGE_KEY: &str = "homepage";
+
+/// Synthetic agent id for the shared skill repository (`~/.skillhub/skills/`).
+///
+/// This is a display-level classification only: it is not a real agent, never
+/// enters [`AGENT_PROFILES`], and so can never be picked as an install target.
+/// It exists so the scan can fold the repository in as a sixth root and the web
+/// view can offer a `.skillhub` category alongside the per-agent ones.
+pub const REPO_AGENT_ID: &str = ".skillhub";
 
 /// Whether a local skill is one skillhub installed, and therefore one we can
 /// update as well as remove.
@@ -71,6 +82,16 @@ pub struct LocalSkill {
     pub homepage_source: Option<HomepageSource>,
     /// The entry exists but could not be resolved (permissions, I/O error).
     pub unreadable: bool,
+    /// Whether the skill lives in the shared repository (`~/.skillhub/skills/`).
+    ///
+    /// Derived from `locations`: true when one of them carries the synthetic
+    /// [`REPO_AGENT_ID`]. A skill installed as an independent copy into an agent
+    /// (a real directory, not a link) is not repo-managed.
+    pub repo_managed: bool,
+    /// The agents (excluding the synthetic `REPO_AGENT_ID` itself) that link to
+    /// this repository skill. Only meaningful when `repo_managed`; empty for a
+    /// skill that is not in the repository.
+    pub linked_agents: Vec<String>,
 }
 
 /// A skill entry found under one agent root, before it is aggregated.
@@ -86,10 +107,15 @@ struct Entry {
 /// Returns the skills plus human-readable warnings for roots that could not be
 /// read. A single unreadable root never aborts the scan.
 pub fn scan_local_skills() -> (Vec<LocalSkill>, Vec<String>) {
-    let roots: Vec<(String, PathBuf)> = AGENT_PROFILES
+    let mut roots: Vec<(String, PathBuf)> = AGENT_PROFILES
         .iter()
         .map(|profile| (profile.id.to_string(), profile_root(profile)))
         .collect();
+    // Synthetic source: the shared repository root. Its sub-directories are real
+    // skill directories (not dot-named), so the existing dot / sibling filtering
+    // leaves them alone, and `aggregate()` folds them into the same `LocalSkill`
+    // as the agent links that point at them.
+    roots.push((REPO_AGENT_ID.to_string(), repo_root()));
     scan_roots(&roots)
 }
 
@@ -207,6 +233,28 @@ fn aggregate(entries: Vec<Entry>) -> Vec<LocalSkill> {
         skill
             .locations
             .sort_by(|a, b| a.agent.cmp(&b.agent).then_with(|| a.path.cmp(&b.path)));
+
+        // Derive the repo classification from the aggregated locations, in the
+        // same loop that already sorts them: zero extra traversal.
+        skill.repo_managed = skill
+            .locations
+            .iter()
+            .any(|location| location.agent == REPO_AGENT_ID);
+        // `linked_agents` is only meaningful for a repo item (it is a display
+        // field for "who shares this repository skill"); a copy-installed or
+        // agent-only skill has no repository entry, so it stays empty.
+        skill.linked_agents = if skill.repo_managed {
+            let mut agents: Vec<String> = skill
+                .locations
+                .iter()
+                .filter(|location| location.agent != REPO_AGENT_ID)
+                .map(|location| location.agent.clone())
+                .collect();
+            agents.dedup();
+            agents
+        } else {
+            Vec::new()
+        };
     }
     skills.sort_by(|a, b| a.slug.cmp(&b.slug));
     skills
@@ -237,6 +285,8 @@ fn build_skill(entry: &Entry, real: Option<&Path>, location: SkillLocation) -> L
             homepage: None,
             homepage_source: None,
             unreadable: false,
+            repo_managed: false,
+            linked_agents: Vec::new(),
         };
     }
 
@@ -253,6 +303,8 @@ fn build_skill(entry: &Entry, real: Option<&Path>, location: SkillLocation) -> L
             homepage: None,
             homepage_source: None,
             unreadable: true,
+            repo_managed: false,
+            linked_agents: Vec::new(),
         };
     };
 
@@ -287,6 +339,8 @@ fn build_skill(entry: &Entry, real: Option<&Path>, location: SkillLocation) -> L
         homepage,
         homepage_source,
         unreadable: false,
+        repo_managed: false,
+        linked_agents: Vec::new(),
     }
 }
 
@@ -316,4 +370,131 @@ pub fn uninstall_location_under(
     // dialog promised the user.
     let managed = kind == LocationKind::Dir && has_metadata(&path);
     remove_location(&path, managed)
+}
+
+/// What removing a skill from the shared repository actually did.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UninstallRepoResult {
+    pub ok: bool,
+    /// The repository directory that was removed.
+    pub removed_dir: String,
+    /// The agent links that were removed first, one per agent id.
+    pub removed_links: Vec<String>,
+    /// Set when a real directory was not installed by skillhub and was renamed
+    /// aside (backed up) rather than deleted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_dir: Option<String>,
+    /// Set when a link could not be removed (e.g. permission); the real directory
+    /// is left in place so nothing is half-removed.
+    pub warnings: Vec<String>,
+}
+
+/// Remove a skill from the shared repository: its real directory plus every
+/// agent link pointing at it.
+///
+/// This is the **opposite** of [`uninstall_location`]: there, detaching one
+/// agent's link leaves the real directory behind; here, deleting the repository
+/// item must also detach every agent that linked to it, or those links would go
+/// dangling. Order matters — links are removed first, then the real directory —
+/// so a halfway failure never leaves a dangling link pointing at a deleted
+/// directory longer than necessary.
+pub fn uninstall_repo_skill(slug: &str) -> Result<UninstallRepoResult, InstallError> {
+    let agent_roots: Vec<(String, PathBuf)> = AGENT_PROFILES
+        .iter()
+        .map(|profile| (profile.id.to_string(), profile_root(profile)))
+        .collect();
+    uninstall_repo_skill_under(&repo_root(), &agent_roots, slug)
+}
+
+/// [`uninstall_repo_skill`] against an explicit repository root and agent roots,
+/// split out so tests can drive it against a temp tree.
+pub fn uninstall_repo_skill_under(
+    repo_root: &Path,
+    agent_roots: &[(String, PathBuf)],
+    slug: &str,
+) -> Result<UninstallRepoResult, InstallError> {
+    if !validate_slug(slug) {
+        return Err(InstallError::new(
+            "invalid_slug",
+            format!("技能目录名无效: {slug}"),
+        ));
+    }
+
+    let real_dir = repo_root.join(slug);
+    let (links, discovery_warnings) = find_links_to_target_under(&real_dir, agent_roots);
+    remove_repo_item(&real_dir, links, discovery_warnings)
+}
+
+/// Validate that `real_dir` is a real directory (never a link) and then remove
+/// every listed agent link before removing the directory itself.
+///
+/// A link must never reach `remove_dir_all`: unlinking a link on the top-level
+/// would follow it and delete the link's target. Each link is removed as a link
+/// only, and if any cannot be removed the real directory is left in place so no
+/// content is lost while a dangling link still points at it.
+///
+/// The directory is deleted only when it is a skillhub-managed repo item
+/// (readable `.skillhub/metadata.json`); a hand-placed directory with no
+/// metadata is renamed aside, mirroring the per-agent uninstall path — the same
+/// single definition of "ours" the scan and the agent path use.
+fn remove_repo_item(
+    real_dir: &Path,
+    links: Vec<(String, PathBuf)>,
+    discovery_warnings: Vec<String>,
+) -> Result<UninstallRepoResult, InstallError> {
+    let meta =
+        std::fs::symlink_metadata(real_dir).map_err(|err| io_error("读取仓库技能状态", &err))?;
+    if !meta.file_type().is_dir() {
+        return Err(InstallError::new(
+            "not_a_directory",
+            format!("仓库技能不是真实目录: {}", real_dir.display()),
+        ));
+    }
+
+    let mut warnings: Vec<String> = discovery_warnings;
+    let mut removed_links: Vec<String> = Vec::new();
+    for (agent, link_path) in &links {
+        match std::fs::remove_file(link_path) {
+            Ok(()) => removed_links.push(agent.clone()),
+            Err(err) => warnings.push(format!("移除 {agent} 链接失败: {err}")),
+        }
+    }
+
+    // If any link could not be removed — or a root was unreadable, so we cannot
+    // be sure we found every link — leave the real directory in place: the user
+    // would otherwise lose the content while a dangling link still points at the
+    // now-missing directory.
+    if !warnings.is_empty() {
+        return Ok(UninstallRepoResult {
+            ok: false,
+            removed_dir: String::new(),
+            removed_links,
+            backup_dir: None,
+            warnings,
+        });
+    }
+
+    // Same single definition of "ours" the scan and the per-agent uninstall use:
+    // a readable metadata.json. A hand-placed directory that is not skillhub's
+    // is renamed aside rather than deleted, so the user's content survives.
+    if has_metadata(real_dir) {
+        std::fs::remove_dir_all(real_dir).map_err(|err| io_error("删除仓库技能目录", &err))?;
+        Ok(UninstallRepoResult {
+            ok: true,
+            removed_dir: real_dir.to_string_lossy().into_owned(),
+            removed_links,
+            backup_dir: None,
+            warnings,
+        })
+    } else {
+        let backup = backup_dir(real_dir)?;
+        Ok(UninstallRepoResult {
+            ok: true,
+            removed_dir: String::new(),
+            removed_links,
+            backup_dir: Some(backup.to_string_lossy().into_owned()),
+            warnings,
+        })
+    }
 }
