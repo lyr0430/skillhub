@@ -1229,6 +1229,8 @@
     "reportSuccessTitle": "Report submitted",
     "reportSuccessDescription": "Administrators will review this report soon.",
     "downloadErrorTitle": "Download failed",
+    "downloadSuccessTitle": "Downloaded",
+    "saveDialogTitle": "Save skill package",
     "reportErrorTitle": "Report failed",
     "share": {
       "button": "Share",

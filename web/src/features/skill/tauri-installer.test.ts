@@ -1,0 +1,88 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { downloadSkillZip, revealInFileManager } from './tauri-installer'
+
+const hoisted = vi.hoisted(() => {
+  const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = []
+  let result: unknown = { ok: true, data: { path: '/Downloads/x.zip', filename: 'x.zip' } }
+  return {
+    calls,
+    getResult: () => result,
+    setResult: (next: unknown) => {
+      result = next
+    },
+  }
+})
+
+vi.mock('@/shared/lib/tauri', () => ({
+  isTauri: () => true,
+  invokeTauri: (cmd: string, args?: Record<string, unknown>) => {
+    hoisted.calls.push({ cmd, args })
+    return Promise.resolve(hoisted.getResult())
+  },
+}))
+
+describe('downloadSkillZip', () => {
+  beforeEach(() => {
+    hoisted.calls.length = 0
+    hoisted.setResult({ ok: true, data: { path: '/Downloads/x.zip', filename: 'x.zip' } })
+  })
+
+  it('invokes the download command with the registry, coordinates, and chosen path', async () => {
+    const result = await downloadSkillZip(
+      'global',
+      'my-skill',
+      '1.2.3',
+      'http://localhost:8080',
+      '/Users/me/Downloads/my-skill-1.2.3.zip',
+    )
+
+    expect(result).toEqual({ path: '/Downloads/x.zip', filename: 'x.zip' })
+    expect(hoisted.calls).toEqual([
+      {
+        cmd: 'download_skill_zip_command',
+        args: {
+          registry: 'http://localhost:8080',
+          namespace: 'global',
+          slug: 'my-skill',
+          version: '1.2.3',
+          path: '/Users/me/Downloads/my-skill-1.2.3.zip',
+        },
+      },
+    ])
+  })
+
+  it('throws when the command reports an error', async () => {
+    hoisted.setResult({ ok: false, error: '下载失败', data: undefined })
+
+    await expect(
+      downloadSkillZip('global', 'my-skill', '1.2.3', 'http://localhost:8080', '/tmp/x.zip'),
+    ).rejects.toThrow('下载失败')
+  })
+
+  it('returns null when not running inside the desktop app', async () => {
+    hoisted.setResult(null)
+
+    await expect(
+      downloadSkillZip('global', 'my-skill', '1.2.3', 'http://localhost:8080', '/tmp/x.zip'),
+    ).resolves.toBeNull()
+  })
+})
+
+describe('revealInFileManager', () => {
+  beforeEach(() => {
+    hoisted.calls.length = 0
+    hoisted.setResult({ ok: true, data: null })
+  })
+
+  it('reveals the downloaded file path via reveal_path', async () => {
+    await revealInFileManager('/Downloads/x.zip')
+
+    expect(hoisted.calls).toEqual([{ cmd: 'reveal_path', args: { path: '/Downloads/x.zip' } }])
+  })
+
+  it('throws when the reveal command reports an error', async () => {
+    hoisted.setResult({ ok: false, error: '打开文件管理器失败', data: undefined })
+
+    await expect(revealInFileManager('/Downloads/x.zip')).rejects.toThrow('打开文件管理器失败')
+  })
+})

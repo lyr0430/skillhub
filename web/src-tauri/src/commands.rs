@@ -4,7 +4,9 @@ use std::path::Path;
 use crate::installer::agents::{find_agent, resolve_agent_targets, skill_dir, AgentTarget};
 use crate::installer::attach::{attach_skill_to_agent, AttachResult};
 use crate::installer::homepage::validate_external_url;
-use crate::installer::install::{install_skill, InstallInput, InstallMode, InstallResult};
+use crate::installer::install::{
+    download_skill_zip, install_skill, DownloadZipResult, InstallInput, InstallMode, InstallResult,
+};
 use crate::installer::link::LocationKind;
 use crate::installer::local_skills::{
     scan_local_skills, uninstall_location, uninstall_repo_skill, LocalSkill, UninstallRepoResult,
@@ -129,6 +131,33 @@ pub async fn install_skill_command(
         Ok(Ok(installed)) => CommandResult::success(installed),
         Ok(Err(err)) => CommandResult::failure(err.message),
         Err(join_err) => CommandResult::failure(format!("安装任务执行失败: {join_err}")),
+    }
+}
+
+/// Tauri command: download a skill version zip to `path` (the location the user
+/// picked in the save dialog).
+///
+/// Downloads via `reqwest`, following the redirect to pre-signed object storage,
+/// so it works in `tauri dev`, in a packaged build, and on any client — unlike
+/// the WebView's `<a download>`, which WKWebView does not reliably handle.
+#[tauri::command]
+pub async fn download_skill_zip_command(
+    registry: String,
+    namespace: String,
+    slug: String,
+    version: String,
+    path: String,
+) -> CommandResult<DownloadZipResult> {
+    // Run the blocking download off the async executor.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        download_skill_zip(&registry, &namespace, &slug, &version, Path::new(&path))
+    })
+    .await;
+
+    match result {
+        Ok(Ok(downloaded)) => CommandResult::success(downloaded),
+        Ok(Err(err)) => CommandResult::failure(err.message),
+        Err(join_err) => CommandResult::failure(format!("下载任务执行失败: {join_err}")),
     }
 }
 
@@ -270,6 +299,35 @@ pub fn open_directory(dir: String) -> CommandResult<()> {
     let result = std::process::Command::new("explorer").arg(&dir).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let result = std::process::Command::new("xdg-open").arg(&dir).spawn();
+
+    match result {
+        Ok(_) => CommandResult::success(()),
+        Err(err) => CommandResult::failure(format!("打开文件管理器失败: {err}")),
+    }
+}
+
+/// Tauri command: reveal a file (or directory) in the OS file manager, with the
+/// entry itself selected — Finder `open -R`, Explorer `/select,`.
+///
+/// Unlike [`open_directory`], which opens a directory, this selects the named
+/// file so the user sees exactly what was downloaded.
+#[tauri::command]
+pub fn reveal_path(path: String) -> CommandResult<()> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return CommandResult::failure(format!("路径不存在: {path}"));
+    }
+
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open")
+        .args(["-R", &path])
+        .spawn();
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("explorer")
+        .args(["/select,", &path])
+        .spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
 
     match result {
         Ok(_) => CommandResult::success(()),

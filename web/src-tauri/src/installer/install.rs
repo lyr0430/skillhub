@@ -24,6 +24,15 @@ pub struct InstallResult {
     pub warnings: Vec<String>,
 }
 
+/// Result of downloading a skill version zip into the system Downloads folder.
+#[derive(Debug, serde::Serialize)]
+pub struct DownloadZipResult {
+    /// Absolute path the zip was written to.
+    pub path: String,
+    /// File name, e.g. `my-skill-1.2.3.zip`.
+    pub filename: String,
+}
+
 /// How a skill's files are placed on disk when installing to an agent.
 ///
 /// Serialized / deserialized as the kebab-case strings `"shared"` and `"copy"`,
@@ -443,6 +452,51 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
     })
 }
 
+/// Download a skill version zip to `target_path` (chosen by the user via the
+/// save dialog) and write it to disk.
+///
+/// Unlike the WebView's `<a download>` — which WKWebView handles unreliably, and
+/// which cannot follow the 302 to a pre-signed object-storage URL cross-origin —
+/// this follows redirects via `reqwest` and writes the bytes to the requested
+/// location. It uses the same transport as the install path, so it behaves
+/// identically in `tauri dev` and in a packaged build on any client.
+pub fn download_skill_zip(
+    registry: &str,
+    namespace: &str,
+    slug: &str,
+    version: &str,
+    target_path: &Path,
+) -> Result<DownloadZipResult, InstallError> {
+    validate_registry(registry)?;
+    if !validate_slug(slug) {
+        return Err(InstallError::new("invalid_slug", "技能 slug 无效"));
+    }
+
+    let url = build_download_url(registry, namespace, slug, version);
+    let response = reqwest::blocking::get(&url).map_err(network_error)?;
+    if !response.status().is_success() {
+        return Err(InstallError::new(
+            "download_failed",
+            format!("下载失败 (HTTP {}) — {}", response.status(), url),
+        ));
+    }
+    let bytes = response.bytes().map_err(network_error)?;
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| io_error("创建目录", &e))?;
+    }
+    fs::write(target_path, &bytes).map_err(|e| io_error("写入下载文件", &e))?;
+
+    Ok(DownloadZipResult {
+        path: target_path.to_string_lossy().into_owned(),
+        filename: target_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| format!("{slug}-{version}.zip")),
+    })
+}
+
 /// A unique sibling of `path`, named `<name>.skillhub-<tag>-<pid>-<nanos>-<n>`.
 ///
 /// Derived from the directory name plus a nonce rather than
@@ -493,4 +547,75 @@ fn flatten_single_root(tmp_dir: &Path) -> PathBuf {
     }
 
     tmp_dir.to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    #[test]
+    fn download_skill_zip_rejects_traversal_slug_before_network() {
+        // Registry is valid but the slug is not; the check fires before any
+        // network call, so the error code is what we assert on.
+        let err = download_skill_zip(
+            "http://localhost:8080",
+            "global",
+            "../escape",
+            "1.0.0",
+            Path::new("out.zip"),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "invalid_slug");
+    }
+
+    #[test]
+    fn download_skill_zip_writes_bytes_to_the_target_path() {
+        // Serve the zip from a throwaway local HTTP server so the full
+        // download-then-write path is exercised against the chosen path.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = b"zip-bytes".to_vec();
+        let expected = body.clone();
+        let body_len = body.len();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/zip\r\n\r\n",
+                body_len
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+        });
+
+        let dir = std::env::temp_dir().join(format!(
+            "skillhub-dl-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("my-skill-1.0.0.zip");
+
+        let result = download_skill_zip(
+            &format!("http://{addr}"),
+            "global",
+            "my-skill",
+            "1.0.0",
+            &target,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), expected);
+        assert_eq!(result.path, target.to_string_lossy());
+        assert_eq!(result.filename, "my-skill-1.0.0.zip");
+
+        handle.join().unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

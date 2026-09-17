@@ -1294,6 +1294,8 @@
     "reportSuccessTitle": "Жалоба отправлена",
     "reportSuccessDescription": "Администраторы скоро рассмотрят эту жалобу.",
     "downloadErrorTitle": "Скачивание не удалось",
+    "downloadSuccessTitle": "Скачано",
+    "saveDialogTitle": "Сохранить пакет навыка",
     "reportErrorTitle": "Жалоба не отправлена",
     "share": {
       "button": "Поделиться",

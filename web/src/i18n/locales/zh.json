@@ -1229,6 +1229,8 @@
     "reportSuccessTitle": "举报已提交",
     "reportSuccessDescription": "管理员将尽快处理这条举报。",
     "downloadErrorTitle": "下载失败",
+    "downloadSuccessTitle": "下载成功",
+    "saveDialogTitle": "保存技能包",
     "reportErrorTitle": "举报失败",
     "share": {
       "button": "分享",

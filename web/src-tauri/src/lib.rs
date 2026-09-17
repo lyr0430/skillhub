@@ -5,6 +5,7 @@ mod installer;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Apply the bundled app icon to the main window so the Dock/taskbar
             // shows the SkillHub logo (Tauri only embeds the bundle icon for
@@ -22,10 +23,12 @@ pub fn run() {
             commands::detect_skill_status,
             commands::list_installed_skills,
             commands::install_skill_command,
+            commands::download_skill_zip_command,
             commands::attach_skill_to_agent_command,
             commands::uninstall_skill_command,
             commands::uninstall_repo_skill_command,
             commands::open_directory,
+            commands::reveal_path,
             commands::open_external_url
         ])
         .run(tauri::generate_context!());

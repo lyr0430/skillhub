@@ -9,7 +9,10 @@ import { FileTree } from '@/features/skill/file-tree'
 import { FilePreviewDialog } from '@/features/skill/file-preview-dialog'
 import type { FileTreeNode } from '@/features/skill/file-tree-builder'
 import type { SkillFile } from '@/api/types'
-import { InstallCommand } from '@/features/skill/install-command'
+import { InstallCommand, getBaseUrl } from '@/features/skill/install-command'
+import { downloadSkillZip, revealInFileManager } from '@/features/skill/tauri-installer'
+import { save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { isTauri } from '@/shared/lib/tauri'
 import { ShareButton } from '@/features/skill/share-button'
 import { InstallForAgentButton } from '@/features/skill/install-for-agent-button'
 import { SkillLabelPanel } from '@/features/skill/skill-label-panel'
@@ -73,6 +76,10 @@ import { useSubmitPromotion } from '@/shared/hooks/use-user-queries'
  * This page coordinates documentation rendering, file browsing, downloads, lifecycle actions,
  * promotion/report dialogs, and social interactions for the selected skill.
  */
+function buildDownloadFilename(slug: string, version: string): string {
+  return `${slug}-${version}.zip`
+}
+
 function suggestNextVersion(version: string) {
   const semverMatch = version.match(/^(\d+)\.(\d+)\.(\d+)$/)
   if (semverMatch) {
@@ -391,6 +398,38 @@ export function SkillDetailPage() {
 
     try {
       const cleanNamespace = namespace.startsWith('@') ? namespace.slice(1) : namespace
+
+      if (isTauri()) {
+        // The desktop WebView cannot reliably honour an `<a download>` to the
+        // pre-signed object-storage URL, so save via the Tauri shell (reqwest).
+        // Ask where to save first; a null path means the user cancelled.
+        const target = await saveDialog({
+          title: t('skillDetail.saveDialogTitle'),
+          defaultPath: buildDownloadFilename(slug, selectedVersionEntry.version),
+          filters: [{ name: 'ZIP', extensions: ['zip'] }],
+        })
+        if (!target) {
+          return
+        }
+        const downloaded = await downloadSkillZip(
+          cleanNamespace,
+          slug,
+          selectedVersionEntry.version,
+          getBaseUrl(),
+          target,
+        )
+        if (downloaded) {
+          toast.success(t('skillDetail.downloadSuccessTitle'), downloaded.filename)
+          void revealInFileManager(downloaded.path).catch(() => {})
+          incrementSkillDownloadCount(queryClient, { namespace, slug })
+          queryClient.invalidateQueries({ queryKey: ['skills', namespace, slug] })
+          queryClient.invalidateQueries({ queryKey: ['skills', 'my'] })
+          queryClient.invalidateQueries({ queryKey: ['skills', 'stars'] })
+          queryClient.invalidateQueries({ queryKey: ['skills', 'search'] })
+        }
+        return
+      }
+
       triggerBrowserDownload(
         buildApiUrl(`${WEB_API_PREFIX}/skills/${cleanNamespace}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(selectedVersionEntry.version)}/download`),
       )

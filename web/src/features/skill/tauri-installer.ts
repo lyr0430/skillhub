@@ -165,6 +165,40 @@ export async function installSkill(
   return result.data ?? { ok: false, dir: '', agent: input.agent, warnings: [] }
 }
 
+/** Result of downloading a skill version zip into the system Downloads folder. */
+export interface DownloadSkillZipResult {
+  /** Absolute path the zip was written to. */
+  path: string
+  /** File name, e.g. `my-skill-1.2.3.zip`. */
+  filename: string
+}
+
+/**
+ * Download a skill version zip to `path` (the location the user picked in the
+ * save dialog) via the Tauri shell. Uses `reqwest` (which follows the 302 to
+ * pre-signed object storage), unlike the WebView's `<a download>` that WKWebView
+ * handles unreliably. Returns `null` when not running inside the desktop app.
+ */
+export async function downloadSkillZip(
+  namespace: string,
+  slug: string,
+  version: string,
+  registry: string,
+  path: string,
+): Promise<DownloadSkillZipResult | null> {
+  const result = await invokeTauri<CommandResult<DownloadSkillZipResult>>(
+    'download_skill_zip_command',
+    { registry, namespace, slug, version, path },
+  )
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '下载失败')
+  }
+  return result.data ?? { path: '', filename: '' }
+}
+
 /**
  * Report per-agent install status for a skill (installed + local version).
  * Returns `null` when not running inside the desktop app.
@@ -308,6 +342,21 @@ export async function openInFileManager(dir: string): Promise<void> {
   }
   if (!result.ok) {
     throw new Error(result.error ?? '打开目录失败')
+  }
+}
+
+/**
+ * Reveal a specific file in the OS file manager, with it selected (Finder
+ * `open -R`, Explorer `/select,`). Used after saving a downloaded zip so the
+ * user sees the file itself, not just the folder.
+ */
+export async function revealInFileManager(path: string): Promise<void> {
+  const result = await invokeTauri<CommandResult<null>>('reveal_path', { path })
+  if (!result) {
+    return
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '打开文件管理器失败')
   }
 }
 
