@@ -5,9 +5,10 @@
 //! the agent-root check that guards uninstall must NOT be applied to the source
 //! here — it would reject exactly the skills this command exists to spread.
 
+use crate::installer::agents::{profile_root, repo_root, AGENT_PROFILES};
 use crate::installer::attach::{
-    attach_entry_name, attach_skill_to_agent, attach_under, copy_dir_recursive,
-    resolve_attach_source,
+    assert_skill_source_within_roots, attach_entry_name, attach_skill_to_agent, attach_under,
+    copy_dir_recursive, resolve_attach_source, skill_source_roots,
 };
 use crate::installer::install::InstallMode;
 use crate::installer::test_support::{make_skill_dir, TempTree};
@@ -79,7 +80,8 @@ mod tests {
         make_skill_dir(&source);
         let agent_root = tree.path("agent/.claude/skills");
 
-        let result = attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
+        let result =
+            attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
 
         let target = agent_root.join("demo");
         assert!(result.ok);
@@ -109,7 +111,8 @@ mod tests {
         let agent_root = tree.path("agent/.claude/skills");
 
         let first = attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
-        let second = attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
+        let second =
+            attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
 
         assert!(first.ok && second.ok);
         assert!(first.warnings.iter().any(|w| w.contains("已链接")));
@@ -128,7 +131,8 @@ mod tests {
         make_skill_dir(&agent_root.join("demo"));
         std::fs::write(agent_root.join("demo/SKILL.md"), "user local content").unwrap();
 
-        let result = attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
+        let result =
+            attach_under(&source, &agent_root, "claude-code", InstallMode::Shared).unwrap();
 
         assert!(result.ok);
         assert!(result.warnings.iter().any(|w| w.contains("已被占用")));
@@ -161,7 +165,10 @@ mod tests {
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(std::fs::read_to_string(target.join("extra.md")).unwrap(), "body");
+        assert_eq!(
+            std::fs::read_to_string(target.join("extra.md")).unwrap(),
+            "body"
+        );
         assert!(source.join("extra.md").is_file());
     }
 
@@ -207,9 +214,18 @@ mod tests {
         let target = tree.path("dst");
         copy_dir_recursive(&source, &target).unwrap();
 
-        assert_eq!(std::fs::read_to_string(target.join("SKILL.md")).unwrap(), "---\nname: x\n---\n");
-        assert_eq!(std::fs::read_to_string(target.join("nested/a.txt")).unwrap(), "a");
-        assert_eq!(std::fs::read_to_string(target.join("nested/deep/b.txt")).unwrap(), "b");
+        assert_eq!(
+            std::fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "---\nname: x\n---\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("nested/a.txt")).unwrap(),
+            "a"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("nested/deep/b.txt")).unwrap(),
+            "b"
+        );
     }
 
     #[cfg(unix)]
@@ -231,7 +247,10 @@ mod tests {
 
         let copied = target.join("linked");
         assert!(
-            std::fs::symlink_metadata(&copied).unwrap().file_type().is_symlink(),
+            std::fs::symlink_metadata(&copied)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
             "the link must be recreated, not dereferenced"
         );
         // No copied *files* from the outside directory exist under the target.
@@ -250,5 +269,35 @@ mod tests {
         copy_dir_recursive(&source, &target).unwrap();
 
         assert!(target.join("SKILL.md").is_file());
+    }
+
+    // ------------------------------------------------------------------ boundary
+
+    /// The attach source must live in the shared repository or an agent root, so a
+    /// web-view-supplied path cannot point at any SKILL.md-bearing directory and
+    /// fan it into an agent root. This is the location half of the boundary; the
+    /// content half (`is_skill_package`) is `rejects_a_source_without_a_skill_file`.
+    #[test]
+    fn skill_source_roots_contains_the_repo_and_every_agent_root() {
+        let roots = skill_source_roots();
+        assert!(roots.contains(&repo_root()));
+        for profile in AGENT_PROFILES {
+            assert!(
+                roots.contains(&profile_root(profile)),
+                "missing agent root for {}",
+                profile.id
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_source_outside_the_skill_roots() {
+        let tree = TempTree::new("attach-outside-roots");
+        let source = tree.path("arbitrary/weather");
+        make_skill_dir(&source);
+
+        // A temp-tree directory is outside every real agent root and the real
+        // repository, so the location boundary rejects it.
+        assert!(assert_skill_source_within_roots(&source).is_err());
     }
 }

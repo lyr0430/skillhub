@@ -56,7 +56,7 @@ const hoisted = vi.hoisted(() => {
     warnings: [],
     agents: [
       { id: 'claude-code', name: 'Claude Code', dir: '/home/u/.claude/skills', installed: true },
-      { id: 'generic', name: '默认全局 Skill 位置', dir: '/home/u/.agents/skills', installed: false },
+      { id: 'generic', name: '通用全局（.agents）', dir: '/home/u/.agents/skills', installed: false },
     ],
   }
   const toastSuccess = vi.fn()

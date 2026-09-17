@@ -63,7 +63,7 @@ web/src-tauri/
 |---|---|---|
 | Claude Code | `~/.claude/skills/<slug>` | `%USERPROFILE%\.claude\skills\<slug>` |
 | Codex / OpenCode / OpenClaw / Cursor / Windsurf / Gemini CLI … | 镜像 CLI profile 相对路径 | 同相对路径 |
-| 默认全局 skill 位置（generic） | `~/.agents/skills/<slug>` | `%USERPROFILE%\.agents\skills\<slug>` |
+| 通用全局（.agents）（generic） | `~/.agents/skills/<slug>` | `%USERPROFILE%\.agents\skills\<slug>` |
 
 - 统一用 `dirs::home_dir()`（或 `tauri::path`）解析家目录，`PathBuf::join` 组装，**禁止硬编码/字符串拼接**。
 - agent 相对路径与 `cli/agents/profiles` 一致；个别平台差异（如 Windows 上 roo/trae）按 profile 映射。
@@ -85,7 +85,7 @@ web/src-tauri/
 
 ### UI 美观要求
 
-- **目标选择弹窗**：每个 agent 显示图标 + 名称 + 目录路径（`~/.claude/skills` 等）；区分「检测到已安装」/「未检测到」两种状态，已安装置顶；底部提供「默认全局 skill 位置」兜底项。
+- **目标选择弹窗**：每个 agent 显示图标 + 名称 + 目录路径（`~/.claude/skills` 等）；区分「检测到已安装」/「未检测到」两种状态，已安装置顶；底部提供「通用全局（.agents）」兜底项。
 - 交互态：选中项有设计过的 focus/hover/active 态；有层级与节奏，非默认卡片网格。
 - **安装状态反馈**：加载中 → 成功（✓ + 目录）/ 失败（可读错误 + 重试），动画仅用 transform/opacity 等 compositor 属性。
 - **空态/边界**：无任何 agent 时展示引导文案，不空白。

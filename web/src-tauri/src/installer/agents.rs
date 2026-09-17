@@ -27,7 +27,7 @@ pub struct AgentProfile {
 pub const AGENT_PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "generic",
-        name: "默认全局 Skill 位置",
+        name: "通用全局（.agents）",
         user_skills: ".agents/skills",
     },
     AgentProfile {

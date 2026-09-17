@@ -1243,7 +1243,6 @@
       "dialogDescription": "Choose an Agent to install to. {{skill}} will be written into that Agent's skills directory.",
       "installed": "Installed",
       "installSuccess": "Installed successfully",
-      "backedUpTo": "Backed up the existing directory to {{dir}}",
       "installError": "Install failed",
       "uninstallSuccess": "Uninstalled successfully",
       "uninstallError": "Uninstall failed",
@@ -2168,7 +2167,6 @@
   "settings": {
     "open": "Settings",
     "title": "Settings",
-    "close": "Close",
     "menus": {
       "skill": "Skill"
     },
@@ -2185,18 +2183,8 @@
         "hint": "copy files into the agent",
         "desc": "Each agent keeps its own independent copy. Uses more disk space, and each one must be upgraded separately."
       },
-      "note": "Switching affects future installs only. Nothing already installed is changed, migrated or removed."
-    },
-    "storagePath": {
-      "label": "Skill storage path",
-      "subtitle": "Where skill files are kept for shared installs",
-      "note": "Affects shared installs only. Skills in independent-copy mode live in each agent's own directory and are not affected.",
-      "defaultBadge": "Default",
-      "choose": "Choose folder",
-      "reset": "Reset to default",
-      "pickerTitle": "Choose the skill storage directory",
-      "invalidInAgentRoot": "That directory is inside an agent's skills folder — choose another location",
-      "pickError": "Could not open the folder picker"
+      "note": "Switching affects future installs only. Nothing already installed is changed, migrated or removed.",
+      "noteTitle": "Note"
     }
   }
 }

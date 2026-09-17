@@ -23,7 +23,7 @@ status: implemented
 ### Milestone 2：前端交互增强（Tauri 环境 + 网页端回退）
 
 - [x] 2.1 增强 `web/src/features/skill/install-for-agent-button.tsx`：检测 `window.__TAURI__`；桌面端改为打开目标选择弹窗，网页端保持现有复制命令行为。
-- [x] 2.2 新增目标选择 `Dialog` 组件：列出 `detect_agents()` 结果（图标 + 名称 + 目录路径），区分「已安装/未检测到」状态，含「默认全局 skill 位置」兜底项。
+- [x] 2.2 新增目标选择 `Dialog` 组件：列出 `detect_agents()` 结果（图标 + 名称 + 目录路径），区分「已安装/未检测到」状态，含「通用全局（.agents）」兜底项。
 - [x] 2.3 实现安装状态反馈：加载中 → 成功（✓ + 安装目录）/ 失败（可读错误），动画使用 transform/opacity。
 - [x] 2.4 空态/边界处理：无任何 agent 时展示引导文案（`noAgents` i18n）。
 - [x] 2.5 遵循设计质量标准：层级/节奏、hover/focus/active 态、语义化 HTML、ARIA、明暗双主题（Tailwind dark）。

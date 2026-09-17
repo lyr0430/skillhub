@@ -1243,7 +1243,6 @@
       "dialogDescription": "选择要安装到的 Agent。安装将把 {{skill}} 写入该 Agent 的技能目录。",
       "installed": "已安装",
       "installSuccess": "安装成功",
-      "backedUpTo": "已备份原目录到 {{dir}}",
       "installError": "安装失败",
       "uninstallSuccess": "卸载成功",
       "uninstallError": "卸载失败",
@@ -2150,7 +2149,7 @@
     "attachConfirm": "添加",
     "attachSuccess": "已添加",
     "attachError": "添加失败",
-    "repoCategory": ".skillhub 仓库",
+    "repoCategory": "skillhub 仓库",
     "refBadge": "被 {{count}} 个 Agent 引用",
     "referencedBy": "被引用：",
     "repoUninstall": "从仓库卸载",
@@ -2167,7 +2166,6 @@
   "settings": {
     "open": "设置",
     "title": "设置",
-    "close": "关闭",
     "menus": {
       "skill": "Skill 配置"
     },
@@ -2186,17 +2184,6 @@
       },
       "note": "切换只影响后续安装，不改动、不迁移、不删除任何已安装的技能。",
       "noteTitle": "注意"
-    },
-    "storagePath": {
-      "label": "技能存储路径",
-      "subtitle": "共享安装时技能文件的存放位置",
-      "note": "仅影响共享安装。独立副本模式的技能存放在各自的 Agent 目录下，不受此项影响。",
-      "defaultBadge": "默认",
-      "choose": "选择文件夹",
-      "reset": "恢复默认",
-      "pickerTitle": "选择技能存储目录",
-      "invalidInAgentRoot": "该目录位于 Agent 技能目录内，请另选一个位置",
-      "pickError": "选择文件夹失败"
     }
   }
 }

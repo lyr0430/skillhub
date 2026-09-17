@@ -13,14 +13,14 @@ status: implemented
 - 用户需要手动打开目标 agent（Claude Code、Codex、OpenClaw 等），再粘贴并执行，步骤繁琐、易错。
 - 用户不清楚复制的内容是什么、该下载/安装到哪里，缺乏即时反馈。
 - 「部署到本地」这一核心价值没有被网页端直接承接，转化路径断裂。
-- 缺少对「安装到哪个 agent」「安装到默认全局 skill 位置」等目标的显式选择能力。
+- 缺少对「安装到哪个 agent」「安装到通用全局（.agents）」等目标的显式选择能力。
 
 ## 目标
 
 1. 将现有「安装到 agent」按钮的交互从「复制提示词」升级为「点击后弹出目标选择弹窗」。
 2. 弹窗中列出可安装目标：
    - 具体 agent：Claude Code、DeepSeek Harness、Codex、OpenCode、OpenClaw 等。
-   - 默认全局 skill 位置（如 `~/.claude/skills`、`~/.agents/skills` 等）。
+   - 通用全局（.agents）（如 `~/.claude/skills`、`~/.agents/skills` 等）。
 3. 选择目标后，可将技能**直接安装到本地**（写入目标 agent 的 skill 目录），并给出成功/失败反馈。
 4. 探索两种实现路径：
    - **优先：网页端直接实现**——若浏览器安全模型允许（如依赖 File System Access API / 本地桥接服务 / 本地守护进程），直接实现一键安装。
@@ -45,7 +45,7 @@ status: implemented
 ## 验收标准
 
 1. 现有的「安装到 agent」按钮不再只复制提示词；点击后弹出目标选择弹窗。
-2. 弹窗展示目标列表，至少包含：Claude Code、DeepSeek Harness、Codex、OpenCode、OpenClaw、默认全局 skill 位置。
+2. 弹窗展示目标列表，至少包含：Claude Code、DeepSeek Harness、Codex、OpenCode、OpenClaw、通用全局（.agents）。
 3. 选择目标后触发安装，安装成功时给用户明确的成功反馈，失败时给出可读的错误提示。
 4. 确定并落地实现路径：要么网页端直接安装（优先），要么 Tauri 桌面应用封装。design.md 中必须明确说明所选路径及理由。
 5. 安装结果可通过某种状态（如已安装标记）向用户反馈，避免重复安装造成困惑。

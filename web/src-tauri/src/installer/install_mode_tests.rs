@@ -128,7 +128,10 @@ mod tests {
             .unwrap()
             .file_type()
             .is_symlink());
-        assert_eq!(std::fs::canonicalize(&target).unwrap(), std::fs::canonicalize(&source).unwrap());
+        assert_eq!(
+            std::fs::canonicalize(&target).unwrap(),
+            std::fs::canonicalize(&source).unwrap()
+        );
     }
 
     #[cfg(unix)]

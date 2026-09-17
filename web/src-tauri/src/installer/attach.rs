@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::installer::agents::{find_agent, profile_root};
+use crate::installer::agents::{find_agent, profile_root, repo_root, AGENT_PROFILES};
 use crate::installer::error::{io_error, not_found, InstallError};
 use crate::installer::frontmatter::SKILL_FILE;
 use crate::installer::install::{is_skill_package, InstallMode};
-use crate::installer::link::create_link;
+use crate::installer::link::{create_link, ensure_under_roots};
 
 /// Outcome of attaching one skill to one agent.
 #[derive(Debug, Serialize)]
@@ -34,13 +34,17 @@ pub struct AttachResult {
 ///
 /// Deliberately **not** `ensure_under_agent_root`. A shared install keeps its real
 /// directory at `~/.skillhub/skills/<slug>`, which sits outside every agent skills
-/// root — an agent-root boundary here would reject exactly the skills that sharing
-/// produces, which is the main thing this command exists to spread around.
+/// root — an agent-root-only boundary here would reject exactly the skills that
+/// sharing produces, which is the main thing this command exists to spread around.
 ///
-/// The boundary that does apply is the content check: the directory must
+/// The boundary that does apply here is the content check: the directory must
 /// canonicalize and must contain a `SKILL.md`, using the same predicate
-/// (`is_skill_package`) that gates writing through a link. That is what stops this
-/// from being pointed at an arbitrary directory.
+/// (`is_skill_package`) that gates writing through a link.
+///
+/// The location boundary — the source must live inside the shared repository or an
+/// agent root — is enforced by [`assert_skill_source_within_roots`], which the
+/// production entry point runs against the real roots. It is kept out of this
+/// helper so the content check stays testable against a temp tree.
 pub fn resolve_attach_source(source_dir: &Path) -> Result<PathBuf, InstallError> {
     let source = fs::canonicalize(source_dir).map_err(|err| io_error("解析技能目录", &err))?;
 
@@ -61,6 +65,35 @@ pub fn resolve_attach_source(source_dir: &Path) -> Result<PathBuf, InstallError>
     }
 
     Ok(source)
+}
+
+/// The legitimate homes of a skill package, used to bound the attach source.
+///
+/// Returns the canonicalized roots the source is allowed to live in: the shared
+/// repository plus every agent skills root. Requiring the source to sit in one of
+/// them (rather than merely containing a `SKILL.md`) is what stops an
+/// attacker-controlled `source_dir` from pointing at any `SKILL.md`-bearing
+/// directory anywhere on the machine and fanning it into an agent root.
+pub fn skill_source_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = AGENT_PROFILES.iter().map(profile_root).collect();
+    roots.push(repo_root());
+    roots
+}
+
+/// Assert that a resolved source is a direct child of one of the skill-source
+/// roots (see [`skill_source_roots`]).
+///
+/// The command path runs this after [`resolve_attach_source`]; the pure helpers
+/// used by tests stay free of it so a temp tree source is still accepted.
+pub fn assert_skill_source_within_roots(source: &Path) -> Result<(), InstallError> {
+    let roots = skill_source_roots();
+    ensure_under_roots(source, &roots).map_err(|_| {
+        InstallError::new(
+            "outside_skill_source",
+            format!("源目录不在仓库或 agent 技能根内: {}", source.display()),
+        )
+    })?;
+    Ok(())
 }
 
 /// The agent-side entry name for a skill, taken from its source directory.
@@ -94,8 +127,14 @@ pub fn attach_skill_to_agent(
     agent_id: &str,
     mode: InstallMode,
 ) -> Result<AttachResult, InstallError> {
-    let profile = find_agent(agent_id)
-        .ok_or_else(|| not_found(&format!("不支持的 agent: {agent_id}")))?;
+    let profile =
+        find_agent(agent_id).ok_or_else(|| not_found(&format!("不支持的 agent: {agent_id}")))?;
+
+    // The source must live in the shared repository or an agent root, not merely
+    // contain a SKILL.md — otherwise a web-view-supplied path could point at any
+    // on-disk skill-shaped directory and fan it into an agent root.
+    let source = resolve_attach_source(source_dir)?;
+    assert_skill_source_within_roots(&source)?;
 
     attach_under(source_dir, &profile_root(profile), agent_id, mode)
 }
@@ -128,7 +167,10 @@ pub fn attach_under(
             if link.created {
                 warnings.push(format!("已链接到共享目录：{}", source.display()));
             } else if link.already_linked {
-                warnings.push(format!("{} 已链接到同一共享目录，未做改动", target.display()));
+                warnings.push(format!(
+                    "{} 已链接到同一共享目录，未做改动",
+                    target.display()
+                ));
             }
             if let Some(warning) = link.warning {
                 warnings.push(warning);
@@ -160,7 +202,9 @@ pub fn attach_under(
 ///
 /// std has no recursive copy. Symlinks *inside* the source are recreated as links
 /// rather than followed, so a copy cannot be used to pull in content from outside
-/// the skill — the same reasoning as the zip-slip guard on extraction.
+/// the skill — the same reasoning as the zip-slip guard on extraction. (A link
+/// pointing outside the skill is recreated verbatim, not dereferenced; whether the
+/// consuming agent follows it is that agent's loader's concern, not this copy's.)
 pub fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), InstallError> {
     fs::create_dir_all(target).map_err(|err| io_error("创建目标目录", &err))?;
 

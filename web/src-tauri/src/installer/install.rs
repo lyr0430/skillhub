@@ -3,7 +3,9 @@ use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::installer::agents::{display_path, find_agent, repo_skill_dir, skill_dir, validate_slug};
+use crate::installer::agents::{
+    display_path, find_agent, repo_skill_dir, skill_dir, validate_slug,
+};
 use crate::installer::error::{io_error, network_error, not_found, zip_error, InstallError};
 use crate::installer::homepage::validate_external_url;
 use crate::installer::link::{create_link, ensure_under_agent_root, resolve_real_dir};
