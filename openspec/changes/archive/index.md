@@ -4,6 +4,7 @@
 
 | 归档时间 | change-id | 需求 | 归档目录 |
 |---|---|---|---|
+| 2026-09-17 | `skillhub-repo-display-20260917-01` | `.skillhub` 仓库展示分类 + 引用关系 + 仓库卸载 | [`skillhub-repo-display-20260917-01-20260917/`](./skillhub-repo-display-20260917-01-20260917/) |
 | 2026-09-16 | `local-skill-manage-20260915-01` | 本地技能页托管非本仓库技能、软链接安全处理、来源跳转 | [`local-skill-manage-20260915-01-20260916/`](./local-skill-manage-20260915-01-20260916/) |
 | 2026-09-16 | `client-skill-manage-20260911-01` | Tauri 桌面客户端「一键安装技能到本地 agent」+ 本地技能管理页 | [`client-skill-manage-20260911-01-20260916/`](./client-skill-manage-20260911-01-20260916/) |
 
