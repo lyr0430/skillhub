@@ -73,6 +73,21 @@ pub fn skill_dir(profile: &AgentProfile, slug: &str) -> PathBuf {
     profile_root(profile).join(slug)
 }
 
+/// The shared skill repository root: `~/.skillhub/skills`.
+///
+/// This is where a *shared* install keeps the real files; each agent then holds a
+/// symlink into it. Deliberately one level below `~/.skillhub`, which the CLI
+/// already uses for its `namespace-sync.json` workspace file — the desktop client
+/// writes only inside `skills/` and never touches that file.
+pub fn repo_root() -> PathBuf {
+    home_dir().join(".skillhub").join("skills")
+}
+
+/// The shared repository directory for one skill: `~/.skillhub/skills/<slug>`.
+pub fn repo_skill_dir(slug: &str) -> PathBuf {
+    repo_root().join(slug)
+}
+
 /// True if the agent's skills root directory already exists on disk, meaning the
 /// agent "appears installed".
 pub fn is_installed(profile: &AgentProfile) -> bool {

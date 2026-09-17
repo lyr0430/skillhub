@@ -3,6 +3,7 @@ import { Bot, Check, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useCopyToClipboard } from '@/shared/lib/clipboard'
 import { isTauri } from '@/shared/lib/tauri'
+import { resolveInstallMode } from '@/shared/lib/install-mode'
 import { toast } from '@/shared/lib/toast'
 import {
   Dialog,
@@ -160,7 +161,17 @@ export function InstallForAgentButton({
     setAction('installing')
     try {
       const result = await installSkill(
-        { namespace, slug, version, agent: selectedId, preserveExisting },
+        {
+          namespace,
+          slug,
+          version,
+          agent: selectedId,
+          preserveExisting,
+          // Read at click time, not from a hook value captured at mount: the
+          // settings overlay is a separate component that never re-renders this
+          // one, so a stale capture would apply the previous mode.
+          installMode: resolveInstallMode(),
+        },
         getBaseUrl(),
       )
       if (result === null) {

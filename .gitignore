@@ -96,7 +96,5 @@ charts/skillhub/charts/*.tgz
 
 # Harness Suite
 .claude
-docs
-openspec
 .harness-suite-tmp
 my-harness-suite-main

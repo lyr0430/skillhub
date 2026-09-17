@@ -45,10 +45,19 @@ const hoisted = vi.hoisted(() => {
       unreadable: false,
     },
   ]
-  const state: { isTauri: boolean; skills: LocalSkill[]; warnings: string[] } = {
+  const state: {
+    isTauri: boolean
+    skills: LocalSkill[]
+    warnings: string[]
+    agents: Array<{ id: string; name: string; dir: string; installed: boolean }>
+  } = {
     isTauri: false,
     skills: defaultSkills,
     warnings: [],
+    agents: [
+      { id: 'claude-code', name: 'Claude Code', dir: '/home/u/.claude/skills', installed: true },
+      { id: 'generic', name: '默认全局 Skill 位置', dir: '/home/u/.agents/skills', installed: false },
+    ],
   }
   const toastSuccess = vi.fn()
   const toastError = vi.fn()
@@ -68,6 +77,13 @@ const hoisted = vi.hoisted(() => {
     dir: '/home/u/.claude/skills/video-frames',
     removedKind: 'dir',
   })
+  const attachSkillToAgent = vi.fn().mockResolvedValue({
+    ok: true,
+    agent: 'generic',
+    dir: '/home/u/.agents/skills/video-frames',
+    realDir: '/home/u/.claude/skills/video-frames',
+    warnings: [],
+  })
   const resolveSkillVersion = vi
     .fn()
     .mockResolvedValue({ namespace: 'global', slug: 'video-frames', version: '2.0.0' })
@@ -82,6 +98,7 @@ const hoisted = vi.hoisted(() => {
     listInstalledSkills,
     installSkill,
     uninstallSkill,
+    attachSkillToAgent,
     resolveSkillVersion,
     openInFileManager,
     openExternalUrl,
@@ -90,13 +107,11 @@ const hoisted = vi.hoisted(() => {
 
 // High-level API is mocked so the page logic is testable without the runtime bridge.
 vi.mock('@/features/skill/tauri-installer', () => ({
-  detectAgents: vi.fn().mockResolvedValue([
-    { id: 'claude-code', name: 'Claude Code', dir: '/home/u/.claude/skills', installed: true },
-    { id: 'generic', name: '默认全局 Skill 位置', dir: '/home/u/.agents/skills', installed: false },
-  ]),
+  detectAgents: vi.fn().mockImplementation(() => Promise.resolve(hoisted.state.agents)),
   listInstalledSkills: hoisted.listInstalledSkills,
   uninstallSkill: hoisted.uninstallSkill,
   installSkill: hoisted.installSkill,
+  attachSkillToAgent: hoisted.attachSkillToAgent,
   openInFileManager: hoisted.openInFileManager,
   openExternalUrl: hoisted.openExternalUrl,
 }))
@@ -137,6 +152,7 @@ describe('local-skills', () => {
     hoisted.state.isTauri = false
     hoisted.state.skills = hoisted.defaultSkills
     hoisted.state.warnings = []
+    window.localStorage.clear()
   })
 
   const renderDesktop = () => {
@@ -438,8 +454,7 @@ describe('local-skills', () => {
     )
   })
 
-  it('filters the list by search query', async () => {
-    hoisted.state.skills = [
+  it('filters the list by search query', async () => {    hoisted.state.skills = [
       managed({ slug: 'alpha' }),
       managed({ slug: 'beta', realPath: '/home/u/.claude/skills/beta', locations: [{ agent: 'claude-code', path: '/home/u/.claude/skills/beta', kind: 'dir' }] }),
     ]
@@ -476,5 +491,120 @@ describe('local-skills', () => {
 
     await waitFor(() => expect(getByText('@global/skill-8')).toBeTruthy())
     expect(getByText('@global/skill-9')).toBeTruthy()
+  })
+
+  describe('attach to another agent', () => {
+    // The default fixture lives in claude-code only, and detectAgents reports
+    // claude-code + generic, so `generic` is the one remaining candidate.
+    it('offers the attach action when another agent could receive the skill', async () => {
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+    })
+
+    it('hides the attach action when every known agent already has the skill', async () => {
+      hoisted.state.skills = [
+        managed({
+          locations: [
+            { agent: 'claude-code', path: '/home/u/.claude/skills/video-frames', kind: 'dir' },
+            { agent: 'generic', path: '/home/u/.agents/skills/video-frames', kind: 'dir' },
+          ],
+        }),
+      ]
+      const { getByText, queryByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByText('@global/video-frames')).toBeTruthy())
+      expect(queryByTestId('local-attach-video-frames')).toBeNull()
+    })
+
+    it('lists only the agents that do not already hold the skill', async () => {
+      const { getByTestId, queryByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+      fireEvent.click(getByTestId('local-attach-video-frames'))
+
+      expect(getByTestId('attach-target-generic')).toBeTruthy()
+      // claude-code already has it, so it must not be offered.
+      expect(queryByTestId('attach-target-claude-code')).toBeNull()
+    })
+
+    it('keeps confirm disabled until an agent is picked', async () => {
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+      fireEvent.click(getByTestId('local-attach-video-frames'))
+
+      expect((getByTestId('confirm-attach') as HTMLButtonElement).disabled).toBe(true)
+
+      fireEvent.click(getByTestId('attach-target-generic'))
+
+      expect((getByTestId('confirm-attach') as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('attaches to each selected agent and refreshes the list', async () => {
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+      fireEvent.click(getByTestId('local-attach-video-frames'))
+      fireEvent.click(getByTestId('attach-target-generic'))
+      fireEvent.click(getByTestId('confirm-attach'))
+
+      await waitFor(() => expect(hoisted.attachSkillToAgent).toHaveBeenCalledTimes(1))
+      expect(hoisted.attachSkillToAgent).toHaveBeenCalledWith({
+        sourceDir: '/home/u/.claude/skills/video-frames',
+        agent: 'generic',
+        mode: 'shared',
+      })
+      await waitFor(() => expect(hoisted.toastSuccess).toHaveBeenCalled())
+    })
+
+    it('uses the stored install mode for the attach', async () => {
+      window.localStorage.setItem('skillhub-install-mode', 'copy')
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+      fireEvent.click(getByTestId('local-attach-video-frames'))
+      fireEvent.click(getByTestId('attach-target-generic'))
+      fireEvent.click(getByTestId('confirm-attach'))
+
+      await waitFor(() => expect(hoisted.attachSkillToAgent).toHaveBeenCalled())
+      expect(hoisted.attachSkillToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'copy' }),
+      )
+    })
+
+    it('reports one agent failing without abandoning the others', async () => {
+      // Two candidates, so "the others" is a real claim: the first rejects, the
+      // second must still be attempted.
+      hoisted.state.agents = [
+        ...hoisted.state.agents,
+        { id: 'codex', name: 'Codex', dir: '/home/u/.codex/skills', installed: true },
+      ]
+      hoisted.attachSkillToAgent.mockImplementation(({ agent }: { agent: string }) =>
+        agent === 'generic'
+          ? Promise.reject(new Error('permission denied'))
+          : Promise.resolve({
+              ok: true,
+              agent,
+              dir: `/home/u/.codex/skills/video-frames`,
+              realDir: '/home/u/.claude/skills/video-frames',
+              warnings: [],
+            }),
+      )
+
+      const { getByTestId } = renderDesktop()
+
+      await waitFor(() => expect(getByTestId('local-attach-video-frames')).toBeTruthy())
+      fireEvent.click(getByTestId('local-attach-video-frames'))
+      fireEvent.click(getByTestId('attach-target-generic'))
+      fireEvent.click(getByTestId('attach-target-codex'))
+      fireEvent.click(getByTestId('confirm-attach'))
+
+      await waitFor(() => expect(hoisted.toastError).toHaveBeenCalled())
+      // Both were attempted, not just the first.
+      expect(hoisted.attachSkillToAgent).toHaveBeenCalledTimes(2)
+      // The dialog closes and the page still refreshes.
+      expect(hoisted.listInstalledSkills).toHaveBeenCalledTimes(2)
+    })
   })
 })

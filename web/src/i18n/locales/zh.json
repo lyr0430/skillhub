@@ -1243,6 +1243,7 @@
       "dialogDescription": "选择要安装到的 Agent。安装将把 {{skill}} 写入该 Agent 的技能目录。",
       "installed": "已安装",
       "installSuccess": "安装成功",
+      "backedUpTo": "已备份原目录到 {{dir}}",
       "installError": "安装失败",
       "uninstallSuccess": "卸载成功",
       "uninstallError": "卸载失败",
@@ -2140,6 +2141,49 @@
     "chooseLocation": "选择要移除的位置",
     "uninstallLinkKept": "真实目录仍在：{{path}}",
     "symlinkTooltip": "这是软链接，更新与卸载都作用于其真实目录：{{path}}",
-    "symlinkBadgeCount": "{{count}} 处软链接"
+    "symlinkBadgeCount": "{{count}} 处软链接",
+    "attach": "添加到其他 Agent",
+    "attachTooltip": "把这个技能也提供给另一个 Agent",
+    "attachTitle": "添加到其他 Agent",
+    "attachDesc": "选择要使用 {{skill}} 的 Agent。不会重新下载，直接使用本地已有的技能文件。",
+    "attachModeNote": "将按当前设置「{{mode}}」的方式添加，可在右上角设置中修改。",
+    "attachConfirm": "添加",
+    "attachSuccess": "已添加",
+    "attachError": "添加失败"
+  },
+  "settings": {
+    "open": "设置",
+    "title": "设置",
+    "close": "关闭",
+    "menus": {
+      "skill": "Skill 配置"
+    },
+    "installMode": {
+      "label": "技能安装方式",
+      "subtitle": "对之后安装的技能生效",
+      "shared": {
+        "name": "共享安装",
+        "hint": "软链接到 .skillhub",
+        "desc": "技能只存一份，多个 Agent 共用。更新一处，所有引用它的 Agent 同步生效。"
+      },
+      "copy": {
+        "name": "独立副本",
+        "hint": "复制文件到 Agent",
+        "desc": "每个 Agent 各存一份独立副本，互不影响。占用空间更多，升级需逐个进行。"
+      },
+      "note": "切换只影响后续安装，不改动、不迁移、不删除任何已安装的技能。",
+      "noteTitle": "注意"
+    },
+    "storagePath": {
+      "label": "技能存储路径",
+      "subtitle": "共享安装时技能文件的存放位置",
+      "note": "仅影响共享安装。独立副本模式的技能存放在各自的 Agent 目录下，不受此项影响。",
+      "defaultBadge": "默认",
+      "choose": "选择文件夹",
+      "reset": "恢复默认",
+      "pickerTitle": "选择技能存储目录",
+      "invalidInAgentRoot": "该目录位于 Agent 技能目录内，请另选一个位置",
+      "pickError": "选择文件夹失败"
+    }
   }
 }

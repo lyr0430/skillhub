@@ -3,10 +3,10 @@ use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::installer::agents::{display_path, find_agent, skill_dir, validate_slug};
+use crate::installer::agents::{display_path, find_agent, repo_skill_dir, skill_dir, validate_slug};
 use crate::installer::error::{io_error, network_error, not_found, zip_error, InstallError};
 use crate::installer::homepage::validate_external_url;
-use crate::installer::link::{ensure_under_agent_root, resolve_real_dir};
+use crate::installer::link::{create_link, ensure_under_agent_root, resolve_real_dir};
 use crate::installer::metadata::{
     backup_dir, has_metadata, write_metadata, InstalledMetadata, SIBLING_TAGS,
 };
@@ -20,6 +20,21 @@ pub struct InstallResult {
     pub dir: String,
     pub agent: String,
     pub warnings: Vec<String>,
+}
+
+/// How a skill's files are placed on disk when installing to an agent.
+///
+/// Serialized / deserialized as the kebab-case strings `"shared"` and `"copy"`,
+/// which is what the desktop UI stores as its install-mode preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallMode {
+    /// One real copy in the shared repository (`~/.skillhub/skills/<slug>`), and
+    /// every agent that installs it gets a symlink. Updating once updates all.
+    #[default]
+    Shared,
+    /// Each agent gets its own independent copy — the historical behaviour.
+    Copy,
 }
 
 /// Targets accepted from the web view for `install_skill`.
@@ -44,6 +59,13 @@ pub struct InstallInput {
     /// up before installing, `false` overwrites it in place. Defaults to false.
     #[serde(default)]
     pub preserve_existing: bool,
+    /// Shared vs independent-copy install.
+    ///
+    /// `#[serde(default)]` matters for the same reason as above: an older web
+    /// view that does not send this field must not fail the whole command. It
+    /// lands on [`InstallMode::Shared`], matching the UI's default.
+    #[serde(default)]
+    pub install_mode: InstallMode,
 }
 
 /// What sits at the install path, and therefore what has to happen before a real
@@ -287,9 +309,27 @@ fn replace_directory(dir: &Path, source: &Path) -> Result<(), InstallError> {
 /// (see [`resolve_install_target`]). The permissive form would accept any
 /// directory that happens to contain one anywhere below it, which is most of a
 /// file system — including the ones this guard exists to keep out.
-fn is_skill_package(dir: &Path) -> bool {
+///
+/// Shared with [`crate::installer::attach`], which uses it as *the* definition of
+/// "this directory is a skill" when attaching an existing skill to another agent.
+/// There must not be a second version of this predicate.
+pub(crate) fn is_skill_package(dir: &Path) -> bool {
     dir.join(crate::installer::frontmatter::SKILL_FILE)
         .is_file()
+}
+
+/// Whether a fresh install should land in the shared repository and be linked.
+///
+/// Shared install applies only when there is no explicit `dir`. An explicit
+/// `dir` means "update this existing entry", and `resolve_install_target`
+/// already writes through an existing link to its target — correct for both
+/// modes. Routing those through the repository instead would detach an existing
+/// link from its own target.
+///
+/// Split out from [`install_skill`] so the rule can be tested without a network
+/// round-trip.
+pub fn should_share_to_repo(install_mode: InstallMode, has_explicit_dir: bool) -> bool {
+    install_mode == InstallMode::Shared && !has_explicit_dir
 }
 
 /// Download a skill zip and install it into the target agent directory.
@@ -324,7 +364,16 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
         skill_dir(profile, &input.slug)
     };
 
-    let (real_dir, predecessor, mut warnings) = resolve_install_target(&target_path)?;
+    // A shared install puts the real files in the repository and links the agent
+    // entry to them. See [`should_share_to_repo`] for why an explicit `dir` opts
+    // out.
+    let share_to_repo = should_share_to_repo(input.install_mode, input.dir.is_some());
+
+    let (real_dir, predecessor, mut warnings) = if share_to_repo {
+        resolve_install_target(&repo_skill_dir(&input.slug))?
+    } else {
+        resolve_install_target(&target_path)?
+    };
 
     // Download the zip.
     let url = build_download_url(registry, &input.namespace, &input.slug, &input.version);
@@ -364,6 +413,25 @@ pub fn install_skill(input: &InstallInput, registry: &str) -> Result<InstallResu
         &real_dir,
         &InstalledMetadata::new(registry, &input.namespace, &input.slug, &input.version),
     )?;
+
+    // Only now that the bytes are safely in the repository, link the agent entry
+    // to it. Creating the link afterwards is the whole point: the swap above must
+    // act on a real directory, and a link created first would be renamed over and
+    // silently detached from its target.
+    if share_to_repo {
+        let link = create_link(&target_path, &real_dir)?;
+        if link.created {
+            warnings.push(format!(
+                "已在 {} 创建指向共享目录的软链接",
+                target_path.display()
+            ));
+        }
+        // `already_linked` is the idempotent case (this agent already shares the
+        // same real directory) and needs no message.
+        if let Some(warning) = link.warning {
+            warnings.push(warning);
+        }
+    }
 
     Ok(InstallResult {
         ok: true,

@@ -6,6 +6,8 @@ import { useAuth } from '@/features/auth/use-auth'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { LanguageSwitcher } from '@/shared/components/language-switcher'
 import { ThemeToggle } from '@/shared/components/theme-toggle'
+import { SettingsTrigger } from '@/shared/components/settings-trigger'
+import { SettingsDialog } from '@/shared/components/settings-dialog'
 import { UserMenu } from '@/shared/components/user-menu'
 import { NotificationBell } from '@/features/notification/notification-bell'
 import { isTauri } from '@/shared/lib/tauri'
@@ -35,6 +37,11 @@ export function Layout() {
   const { user, isLoading } = useAuth()
   const [isHeaderElevated, setIsHeaderElevated] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // Owned here, not by the trigger: the header has `backdrop-blur`, which makes
+  // it a containing block for `position: fixed`, so the centered dialog must be
+  // rendered outside the header to center on the viewport. The two halves
+  // therefore live in different parts of this tree.
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const previousPathnameRef = useRef(pathname)
   const contentLayoutPathname = resolveAppMainContentPathname(pathname, resolvedPathname)
   const mainContentLayout = getAppMainContentLayout(contentLayoutPathname)
@@ -158,6 +165,11 @@ export function Layout() {
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
           <ThemeToggle />
+          {/* Desktop-only settings entry; renders nothing in the browser. */}
+          <SettingsTrigger
+            open={settingsOpen}
+            onToggle={() => setSettingsOpen((current) => !current)}
+          />
           <LanguageSwitcher />
           {user && <NotificationBell />}
           {isLoading ? null : user ? (
@@ -172,6 +184,11 @@ export function Layout() {
           )}
         </div>
       </header>
+
+      {/* Desktop-only settings modal. Outside the header on purpose — see the
+          note on `settingsOpen` above. Portals to <body>, so it paints above
+          everything regardless of where it sits here. */}
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* Mobile nav dropdown */}
       {mobileMenuOpen ? (

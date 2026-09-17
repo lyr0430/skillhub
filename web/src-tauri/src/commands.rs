@@ -1,8 +1,10 @@
 use serde::Serialize;
+use std::path::Path;
 
 use crate::installer::agents::{find_agent, resolve_agent_targets, skill_dir, AgentTarget};
+use crate::installer::attach::{attach_skill_to_agent, AttachResult};
 use crate::installer::homepage::validate_external_url;
-use crate::installer::install::{install_skill, InstallInput, InstallResult};
+use crate::installer::install::{install_skill, InstallInput, InstallMode, InstallResult};
 use crate::installer::link::LocationKind;
 use crate::installer::local_skills::{scan_local_skills, uninstall_location, LocalSkill};
 use crate::installer::metadata::{detect_status, SkillStatus};
@@ -125,6 +127,31 @@ pub async fn install_skill_command(
         Ok(Ok(installed)) => CommandResult::success(installed),
         Ok(Err(err)) => CommandResult::failure(err.message),
         Err(join_err) => CommandResult::failure(format!("安装任务执行失败: {join_err}")),
+    }
+}
+
+/// Tauri command: make an already-installed skill available to another agent.
+///
+/// Purely local — nothing is downloaded and no registry is consulted, so this
+/// works for skills that have no registry origin. `mode` mirrors the install
+/// preference: shared links the agent entry to the real directory, copy
+/// duplicates the contents.
+#[tauri::command]
+pub async fn attach_skill_to_agent_command(
+    source_dir: String,
+    agent: String,
+    mode: InstallMode,
+) -> CommandResult<AttachResult> {
+    // Filesystem work (a recursive copy in the worst case) off the async executor.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        attach_skill_to_agent(Path::new(&source_dir), &agent, mode)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(attached)) => CommandResult::success(attached),
+        Ok(Err(err)) => CommandResult::failure(err.message),
+        Err(join_err) => CommandResult::failure(format!("添加任务执行失败: {join_err}")),
     }
 }
 

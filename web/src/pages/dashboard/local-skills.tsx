@@ -21,6 +21,7 @@ import {
 import { AgentBrandIcon } from '@/features/skill/agent-icons'
 import { LocalSkillCard } from '@/features/skill/local-skill-card'
 import {
+  attachSkillToAgent,
   detectAgents,
   listInstalledSkills,
   uninstallSkill,
@@ -33,6 +34,7 @@ import {
 } from '@/features/skill/tauri-installer'
 import { getBaseUrl } from '@/features/skill/install-command'
 import { resolveSkillVersion } from '@/api/client'
+import { resolveInstallMode } from '@/shared/lib/install-mode'
 
 const PAGE_SIZE = 8
 
@@ -62,6 +64,9 @@ export function LocalSkillsPage() {
   const [confirmLocation, setConfirmLocation] = useState<SkillLocation | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
+  const [attachSkill, setAttachSkill] = useState<LocalSkill | null>(null)
+  const [attachSelected, setAttachSelected] = useState<string[]>([])
+  const [attachBusy, setAttachBusy] = useState(false)
 
   /**
    * Re-read the local skills. `silent` keeps the current list rendered while
@@ -210,6 +215,72 @@ export function LocalSkillsPage() {
         t('localSkills.openHomepageError'),
         err instanceof Error ? err.message : undefined,
       )
+    }
+  }
+
+  /**
+   * Agents that do not already expose this skill.
+   *
+   * Excludes every agent already holding it, so the dialog never offers a no-op,
+   * and a skill reachable from all of them simply hides the entry.
+   */
+  const attachCandidates = useCallback(
+    (skill: LocalSkill): AgentTarget[] => {
+      const held = new Set(skill.locations.map((location) => location.agent))
+      return agents.filter((agent) => !held.has(agent.id))
+    },
+    [agents],
+  )
+
+  const openAttach = (skill: LocalSkill) => {
+    setAttachSkill(skill)
+    // Nothing preselected: which agents should get it is the user's call.
+    setAttachSelected([])
+  }
+
+  const closeAttach = () => {
+    setAttachSkill(null)
+    setAttachSelected([])
+  }
+
+  const handleAttach = async () => {
+    const skill = attachSkill
+    // A broken or foreign link has no resolvable source, so there is nothing to
+    // attach — the card hides the entry in that case, and this is the backstop.
+    if (!skill?.realPath || attachSelected.length === 0) return
+
+    setAttachBusy(true)
+    // Resolved once per confirm, at action time: the mode may have been changed
+    // in the settings overlay while this dialog was open.
+    const mode = resolveInstallMode()
+    const warnings: string[] = []
+    const failures: string[] = []
+
+    try {
+      for (const agent of attachSelected) {
+        try {
+          const result = await attachSkillToAgent({
+            sourceDir: skill.realPath,
+            agent,
+            mode,
+          })
+          if (result === null) return
+          warnings.push(...result.warnings)
+        } catch (err) {
+          // One agent failing must not abandon the others that were selected.
+          failures.push(`${agent}: ${err instanceof Error ? err.message : ''}`)
+        }
+      }
+
+      if (failures.length > 0) {
+        toast.error(t('localSkills.attachError'), failures.join(' · '))
+      } else {
+        toast.success(t('localSkills.attachSuccess'), warnings[0])
+      }
+      closeAttach()
+      await refresh({ silent: true })
+    } finally {
+      setAttachBusy(false)
     }
   }
 
@@ -368,6 +439,8 @@ export function LocalSkillsPage() {
                     onOpenHomepage={handleOpenHomepage}
                     onUninstall={openConfirm}
                     onUpdate={handleUpdate}
+                    onAttach={openAttach}
+                    attachTargetCount={attachCandidates(skill).length}
                   />
                 ))}
               </div>
@@ -455,6 +528,82 @@ export function LocalSkillsPage() {
               }}
             >
               {t('localSkills.uninstallConfirm')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Attach to other agents. Multi-select because the common case is
+          spreading one skill across several agents at once. */}
+      <AlertDialog open={attachSkill !== null} onOpenChange={(next) => !next && closeAttach()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('localSkills.attachTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {attachSkill &&
+                t('localSkills.attachDesc', {
+                  skill: attachSkill.namespace
+                    ? `@${attachSkill.namespace}/${attachSkill.slug}`
+                    : attachSkill.slug,
+                })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2">
+            {attachSkill &&
+              attachCandidates(attachSkill).map((agent) => {
+                const checked = attachSelected.includes(agent.id)
+                return (
+                  <label
+                    key={agent.id}
+                    data-testid={`attach-target-${agent.id}`}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors',
+                      checked
+                        ? 'border-primary/60 bg-primary/10'
+                        : 'border-border/60 bg-muted/30 hover:bg-muted/60',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setAttachSelected((current) =>
+                          checked
+                            ? current.filter((id) => id !== agent.id)
+                            : [...current, agent.id],
+                        )
+                      }
+                    />
+                    <AgentBrandIcon id={agent.id} size={16} />
+                    <span className="font-medium text-foreground">{agent.name}</span>
+                  </label>
+                )
+              })}
+          </div>
+
+          {/* Reuses the settings wording so the two modes are described the same
+              way wherever they appear. */}
+          <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+            {t('localSkills.attachModeNote', {
+              mode:
+                resolveInstallMode() === 'shared'
+                  ? t('settings.installMode.shared.name')
+                  : t('settings.installMode.copy.name'),
+            })}
+          </p>
+
+          <AlertDialogFooter>
+            <Button type="button" variant="outline" onClick={closeAttach} disabled={attachBusy}>
+              {t('localSkills.cancel')}
+            </Button>
+            <Button
+              type="button"
+              data-testid="confirm-attach"
+              disabled={attachBusy || attachSelected.length === 0}
+              onClick={handleAttach}
+            >
+              {t('localSkills.attachConfirm')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

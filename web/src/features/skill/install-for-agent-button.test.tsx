@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InstallForAgentButton, buildAgentInstallPrompt } from './install-for-agent-button'
 import type { AgentSkillStatus } from './tauri-installer'
+import { INSTALL_MODE_STORAGE_KEY } from '@/shared/lib/install-mode'
 
 // Stable `t` handler so it stays referentially equal across renders (real
 // react-i18next returns a stable `t`; an inline arrow would loop the effect dep).
@@ -112,6 +113,7 @@ describe('install-for-agent-button', () => {
     hoisted.statuses = [...hoisted.defaultStatuses]
     hoisted.state.isTauri = false
     window.__SKILLHUB_RUNTIME_CONFIG__ = originalRuntimeConfig
+    window.localStorage.clear()
   })
 
   it('builds a prompt for a global skill using the instance guide', () => {
@@ -221,6 +223,62 @@ describe('install-for-agent-button', () => {
       await waitFor(() => {
         expect(hoisted.toastSuccess).toHaveBeenCalled()
       })
+    })
+
+    it('defaults to a shared install when no preference is stored', async () => {
+      const { getByTestId } = render(createElement(InstallForAgentButton, {
+        namespace: 'global',
+        slug: 'my-skill',
+        version: '1.2.3',
+      }))
+
+      await act(async () => fireEvent.click(getByTestId('install-for-agent-button')))
+      await waitFor(() => expect(getByTestId('install-target-claude-code')).toBeTruthy())
+      await act(async () => fireEvent.click(getByTestId('install-update')))
+
+      await waitFor(() => expect(hoisted.installArgs.length).toBeGreaterThan(0))
+      const input = hoisted.installArgs[0].input as { installMode?: string }
+      expect(input.installMode).toBe('shared')
+    })
+
+    it('passes the stored install mode through to the desktop installer', async () => {
+      window.localStorage.setItem(INSTALL_MODE_STORAGE_KEY, 'copy')
+
+      const { getByTestId } = render(createElement(InstallForAgentButton, {
+        namespace: 'global',
+        slug: 'my-skill',
+        version: '1.2.3',
+      }))
+
+      await act(async () => fireEvent.click(getByTestId('install-for-agent-button')))
+      await waitFor(() => expect(getByTestId('install-target-claude-code')).toBeTruthy())
+      await act(async () => fireEvent.click(getByTestId('install-update')))
+
+      await waitFor(() => expect(hoisted.installArgs.length).toBeGreaterThan(0))
+      const input = hoisted.installArgs[0].input as { installMode?: string }
+      expect(input.installMode).toBe('copy')
+    })
+
+    it('reads the install mode when the action runs, not when the dialog opened', async () => {
+      // The settings overlay is a different component and never re-renders this
+      // one, so a value captured at mount would apply the previous mode.
+      const { getByTestId } = render(createElement(InstallForAgentButton, {
+        namespace: 'global',
+        slug: 'my-skill',
+        version: '1.2.3',
+      }))
+
+      await act(async () => fireEvent.click(getByTestId('install-for-agent-button')))
+      await waitFor(() => expect(getByTestId('install-target-claude-code')).toBeTruthy())
+
+      // The user switches the mode while this dialog is already open.
+      window.localStorage.setItem(INSTALL_MODE_STORAGE_KEY, 'copy')
+
+      await act(async () => fireEvent.click(getByTestId('install-update')))
+
+      await waitFor(() => expect(hoisted.installArgs.length).toBeGreaterThan(0))
+      const input = hoisted.installArgs[0].input as { installMode?: string }
+      expect(input.installMode).toBe('copy')
     })
 
     it('uninstalls the selected agent after a confirmation dialog', async () => {

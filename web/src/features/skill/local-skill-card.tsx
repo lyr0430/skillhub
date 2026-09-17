@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Copy, ExternalLink, FolderOpen, Link2, Link2Off, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, FolderOpen, Link2, Link2Off, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
 import { cn } from '@/shared/lib/utils'
@@ -9,11 +9,17 @@ import type { HomepageSource, LocalSkill, LocationKind } from './tauri-installer
 interface LocalSkillCardProps {
   skill: LocalSkill
   busy: boolean
+  /**
+   * Agents that could still receive this skill. The entry is hidden when there
+   * are none, so the row never offers an action that would open an empty list.
+   */
+  attachTargetCount: number
   onCopyPath: (path: string) => void
   onOpenFolder: (path: string) => void
   onOpenHomepage: (url: string) => void
   onUninstall: (skill: LocalSkill) => void
   onUpdate: (skill: LocalSkill) => void
+  onAttach: (skill: LocalSkill) => void
 }
 
 /** i18n key suffix for each on-disk shape, used for the location chip. */
@@ -43,11 +49,13 @@ function displayName(skill: LocalSkill): string {
 export function LocalSkillCard({
   skill,
   busy,
+  attachTargetCount,
   onCopyPath,
   onOpenFolder,
   onOpenHomepage,
   onUninstall,
   onUpdate,
+  onAttach,
 }: LocalSkillCardProps) {
   const { t } = useTranslation()
 
@@ -189,6 +197,22 @@ export function LocalSkillCard({
               onClick={() => onOpenFolder(skill.realPath as string)}
             >
               <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
+          {/* Only meaningful when the content is resolvable (`!broken`) and some
+              other agent could still receive it. */}
+          {!broken && attachTargetCount > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`local-attach-${skill.slug}`}
+              disabled={busy}
+              title={t('localSkills.attachTooltip')}
+              onClick={() => onAttach(skill)}
+            >
+              <Plus className="h-4 w-4" />
+              {t('localSkills.attach')}
             </Button>
           )}
           <Button

@@ -22,6 +22,7 @@ pub fn run() {
             commands::detect_skill_status,
             commands::list_installed_skills,
             commands::install_skill_command,
+            commands::attach_skill_to_agent_command,
             commands::uninstall_skill_command,
             commands::open_directory,
             commands::open_external_url

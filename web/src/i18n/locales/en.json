@@ -1243,6 +1243,7 @@
       "dialogDescription": "Choose an Agent to install to. {{skill}} will be written into that Agent's skills directory.",
       "installed": "Installed",
       "installSuccess": "Installed successfully",
+      "backedUpTo": "Backed up the existing directory to {{dir}}",
       "installError": "Install failed",
       "uninstallSuccess": "Uninstalled successfully",
       "uninstallError": "Uninstall failed",
@@ -2141,6 +2142,48 @@
     "chooseLocation": "Choose the location to remove",
     "uninstallLinkKept": "Real directory kept at {{path}}",
     "symlinkTooltip": "Symlinked — updates and removal act on the real directory at {{path}}",
-    "symlinkBadgeCount": "{{count}} symlinks"
+    "symlinkBadgeCount": "{{count}} symlinks",
+    "attach": "Add to another agent",
+    "attachTooltip": "Offer this skill to another agent too",
+    "attachTitle": "Add to another agent",
+    "attachDesc": "Choose which agents should use {{skill}}. Nothing is downloaded — the skill files already on disk are used.",
+    "attachModeNote": "Will be added using the current setting, “{{mode}}”. Change it in the settings menu at the top right.",
+    "attachConfirm": "Add",
+    "attachSuccess": "Added",
+    "attachError": "Could not add"
+  },
+  "settings": {
+    "open": "Settings",
+    "title": "Settings",
+    "close": "Close",
+    "menus": {
+      "skill": "Skill"
+    },
+    "installMode": {
+      "label": "Skill install method",
+      "subtitle": "Applies to skills installed from now on",
+      "shared": {
+        "name": "Shared install",
+        "hint": "symlink into .skillhub",
+        "desc": "One copy is stored and shared by every agent. Update it once and every agent referencing it updates at the same time."
+      },
+      "copy": {
+        "name": "Independent copy",
+        "hint": "copy files into the agent",
+        "desc": "Each agent keeps its own independent copy. Uses more disk space, and each one must be upgraded separately."
+      },
+      "note": "Switching affects future installs only. Nothing already installed is changed, migrated or removed."
+    },
+    "storagePath": {
+      "label": "Skill storage path",
+      "subtitle": "Where skill files are kept for shared installs",
+      "note": "Affects shared installs only. Skills in independent-copy mode live in each agent's own directory and are not affected.",
+      "defaultBadge": "Default",
+      "choose": "Choose folder",
+      "reset": "Reset to default",
+      "pickerTitle": "Choose the skill storage directory",
+      "invalidInAgentRoot": "That directory is inside an agent's skills folder — choose another location",
+      "pickError": "Could not open the folder picker"
+    }
   }
 }

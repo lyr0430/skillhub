@@ -1,4 +1,5 @@
 import { invokeTauri } from '@/shared/lib/tauri'
+import type { InstallMode } from '@/shared/lib/install-mode'
 
 /** An install target (agent) exposed by the desktop `detect_agents` command. */
 export interface AgentTarget {
@@ -67,6 +68,14 @@ export interface InstallSkillInput {
   dir?: string
   /** When a same-named non-skillhub dir exists: true = back it up, false = overwrite. */
   preserveExisting?: boolean
+  /**
+   * Shared vs independent-copy install.
+   *
+   * Resolve this at click time with `resolveInstallMode()` rather than closing
+   * over a hook value, so a mode switched moments earlier is the one that takes
+   * effect. Omitting it makes Rust default to `shared`.
+   */
+  installMode?: InstallMode
 }
 
 /** Result of an install, returned by the desktop `install_skill_command`. */
@@ -195,6 +204,58 @@ export async function uninstallSkill(
     throw new Error(result.error ?? '卸载失败')
   }
   return result.data ?? { ok: false, dir, removedKind: 'dir' }
+}
+
+/** Payload accepted by the desktop `attach_skill_to_agent_command`. */
+export interface AttachSkillInput {
+  /** The skill's real directory — not a link path. */
+  sourceDir: string
+  agent: string
+  mode: InstallMode
+}
+
+/** Result of attaching an existing skill to another agent. */
+export interface AttachSkillResult {
+  ok: boolean
+  agent: string
+  /** The agent-side entry that now exposes the skill. */
+  dir: string
+  /** The real directory the content lives in. */
+  realDir: string
+  warnings: string[]
+}
+
+/**
+ * Make an already-installed skill available to another agent.
+ *
+ * Purely local: nothing is downloaded and no registry is consulted, so it works
+ * for skills that were never installed from a registry. `mode` decides whether
+ * the agent entry becomes a link to the real directory or its own copy.
+ *
+ * Returns `null` when not running inside the desktop app.
+ */
+export async function attachSkillToAgent(
+  input: AttachSkillInput,
+): Promise<AttachSkillResult | null> {
+  const result = await invokeTauri<CommandResult<AttachSkillResult>>(
+    'attach_skill_to_agent_command',
+    { sourceDir: input.sourceDir, agent: input.agent, mode: input.mode },
+  )
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '添加到其他 Agent 失败')
+  }
+  return (
+    result.data ?? {
+      ok: false,
+      agent: input.agent,
+      dir: '',
+      realDir: input.sourceDir,
+      warnings: [],
+    }
+  )
 }
 
 /**

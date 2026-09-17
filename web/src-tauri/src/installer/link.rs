@@ -240,3 +240,110 @@ pub fn ensure_under_roots(path: &Path, roots: &[PathBuf]) -> Result<PathBuf, Ins
         format!("拒绝操作 agent 目录之外的路径: {}", path.display()),
     ))
 }
+
+/// What [`create_link`] did, so the caller can report it truthfully.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCreation {
+    /// The link was created by this call.
+    pub created: bool,
+    /// A link to the same real directory was already in place; nothing changed.
+    pub already_linked: bool,
+    /// Set when nothing was created because the path is occupied by something
+    /// else. Carries the message to show the user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
+/// Point the agent-side entry `target` at the real directory `source`.
+///
+/// `source` must itself be a real directory, never a link: chaining a link to
+/// another link would make the shared skill depend on the intermediate link's
+/// lifetime, which is the fragility sharing exists to remove.
+///
+/// **Refuses to displace anything.** Only an absent path is linked. An existing
+/// entry — a directory, a foreign link, or a dangling link — is reported through
+/// `warning` and left untouched, because replacing it is a destructive act the
+/// user should choose explicitly (the local-skills page already offers uninstall
+/// for exactly that). The single exception is a link that already resolves to
+/// `source`, which is a no-op so that re-installing is idempotent.
+///
+/// The link is written with `source` *as given*, not canonicalized, so the target
+/// shown to the user and stored on disk stays the readable `~/.skillhub/skills/x`
+/// rather than macOS's `/System/Volumes/Data/...` expansion.
+pub fn create_link(target: &Path, source: &Path) -> Result<LinkCreation, InstallError> {
+    // `symlink_metadata` on purpose: `is_dir()` follows links, and a link here
+    // would violate the "source is a real directory" contract this relies on.
+    let source_meta = fs::symlink_metadata(source)
+        .map_err(|err| io_error("读取共享目录状态", &err))?;
+    if !source_meta.file_type().is_dir() {
+        return Err(InstallError::new(
+            "not_a_directory",
+            format!("链接目标必须是真实目录: {}", source.display()),
+        ));
+    }
+
+    match fs::symlink_metadata(target) {
+        Err(err) if err.kind() == ErrorKind::NotFound => {}
+        Err(err) => return Err(io_error("读取条目状态", &err)),
+        Ok(_) => {
+            // Canonicalize *both* sides for the comparison: the link may have
+            // been written with a different but equivalent spelling of the same
+            // directory (`~` vs absolute, or macOS's `/System/Volumes/Data`
+            // prefix), and a string compare would then call it a foreign link.
+            let is_same_link = classify(target)
+                .map(|kind| kind == LocationKind::Symlink)
+                .unwrap_or(false)
+                && match (fs::canonicalize(target), fs::canonicalize(source)) {
+                    (Ok(existing), Ok(wanted)) => existing == wanted,
+                    _ => false,
+                };
+
+            if is_same_link {
+                return Ok(LinkCreation {
+                    created: false,
+                    already_linked: true,
+                    warning: None,
+                });
+            }
+
+            return Ok(LinkCreation {
+                created: false,
+                already_linked: false,
+                warning: Some(format!(
+                    "{} 已被占用，未创建链接；如需改为共享安装，请先卸载该条目",
+                    target.display()
+                )),
+            });
+        }
+    }
+
+    // The agent's skills root may not exist yet on a machine where the agent was
+    // never used — the repo side got `create_dir_all`, this side has not.
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| io_error("创建 agent 目录", &err))?;
+    }
+
+    symlink_dir(target, source).map_err(|err| io_error("创建符号链接", &err))?;
+
+    Ok(LinkCreation {
+        created: true,
+        already_linked: false,
+        warning: None,
+    })
+}
+
+/// Create a directory symlink at `target` pointing to `source`.
+///
+/// Split per platform because the two have no common std API: Windows must be
+/// told it is a directory link, and creating one may require Developer Mode or
+/// elevation — hence a real error rather than a panic.
+#[cfg(unix)]
+fn symlink_dir(target: &Path, source: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, target)
+}
+
+#[cfg(windows)]
+fn symlink_dir(target: &Path, source: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(source, target)
+}
