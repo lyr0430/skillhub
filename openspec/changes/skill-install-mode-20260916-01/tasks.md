@@ -89,12 +89,12 @@ scope: 切片一（设置入口 + 安装方式偏好 + 共享安装 + 已有技�
 
 - [x] Rust 编译通过（`cargo check` / `cargo clippy -D warnings` 干净）
 - [x] 前端类型检查通过（`pnpm typecheck`）+ lint 通过（`--max-warnings 0`）
-- [x] Rust 单元测试通过（87 passed / 1 ignored）
-- [x] 前端单元测试通过（837 passed，209 files）
+- [x] Rust 单元测试通过（106 passed / 1 ignored）
+- [x] 前端单元测试通过（851 passed，210 files）
 - [ ] 手工验收 proposal 标准 1–7、12、13 通过 —— **需在真实桌面应用中点选，本环境无法完成**
 - [x] CLI 回归通过（`cli/` 零改动 + 路径不重叠断言）
 - [x] 确认**未触碰**受保护路径（`server/`、`sql/`、`deploy/`、`infra/`、`application*.yml`、`db/`）
-- [ ] Review 通过（`.claude/REVIEW.md`，重点：分层、事务边界、软链接不变量）
+- [x] Review 通过（`.claude/REVIEW.md`）—— 四位并行评审（Rust / TypeScript / 安全 / OpenSpec 对齐），发现 1 HIGH（attach 源位置边界）+ 2 HIGH（未注册 dialog 依赖、死 i18n key）+ 2 MEDIUM（i18n 缺失/未实现、fmt），已全部修复并补测试；见归档记录「评审结论」
 
 ## 下一步
 
