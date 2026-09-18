@@ -4,6 +4,7 @@
 
 | 归档时间 | change-id | 需求 | 归档目录 |
 |---|---|---|---|
+| 2026-09-18 | `skill-storage-path-20260918-01` | 技能存储路径可配置（选择目录/整库迁移+软链接更新/恢复默认） | [`skill-storage-path-20260918-01-20260918/`](./skill-storage-path-20260918-01-20260918/) |
 | 2026-09-17 | `skill-install-mode-20260916-01` | 设置入口 + 安装方式偏好（共享/复制）+ 共享安装 + 已有技能添加到其他 agent | [`skill-install-mode-20260916-01-20260917/`](./skill-install-mode-20260916-01-20260917/) |
 | 2026-09-17 | `skillhub-repo-display-20260917-01` | `.skillhub` 仓库展示分类 + 引用关系 + 仓库卸载 | [`skillhub-repo-display-20260917-01-20260917/`](./skillhub-repo-display-20260917-01-20260917/) |
 | 2026-09-16 | `local-skill-manage-20260915-01` | 本地技能页托管非本仓库技能、软链接安全处理、来源跳转 | [`local-skill-manage-20260915-01-20260916/`](./local-skill-manage-20260915-01-20260916/) |
