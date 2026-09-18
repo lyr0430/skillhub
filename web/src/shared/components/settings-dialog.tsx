@@ -306,10 +306,15 @@ function StoragePathControl() {
       return
     }
     // The user already confirmed above; now the native directory picker opens,
-    // and only a real selection triggers the move.
-    const selected = await openDialog({ directory: true })
-    if (typeof selected !== 'string' || !selected) return
-    await runMigration('pick', selected)
+    // and only a real selection triggers the move. A failure here (e.g. the
+    // dialog permission is missing) must surface, not silently swallow.
+    try {
+      const selected = await openDialog({ directory: true })
+      if (typeof selected !== 'string' || !selected) return
+      await runMigration('pick', selected)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.storagePath.error'))
+    }
   }
 
   const disabled = busy || !currentPath
