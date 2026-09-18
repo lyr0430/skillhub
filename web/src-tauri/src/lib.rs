@@ -29,7 +29,10 @@ pub fn run() {
             commands::uninstall_repo_skill_command,
             commands::open_directory,
             commands::reveal_path,
-            commands::open_external_url
+            commands::open_external_url,
+            commands::get_skill_storage_path,
+            commands::set_skill_storage_path,
+            commands::reset_skill_storage_path
         ])
         .run(tauri::generate_context!());
 

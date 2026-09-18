@@ -73,14 +73,25 @@ pub fn skill_dir(profile: &AgentProfile, slug: &str) -> PathBuf {
     profile_root(profile).join(slug)
 }
 
-/// The shared skill repository root: `~/.skillhub/skills`.
+/// The default shared skill repository root: `~/.skillhub/skills`.
 ///
 /// This is where a *shared* install keeps the real files; each agent then holds a
 /// symlink into it. Deliberately one level below `~/.skillhub`, which the CLI
 /// already uses for its `namespace-sync.json` workspace file — the desktop client
 /// writes only inside `skills/` and never touches that file.
-pub fn repo_root() -> PathBuf {
+pub fn default_repo_root() -> PathBuf {
     home_dir().join(".skillhub").join("skills")
+}
+
+/// The effective shared skill repository root.
+///
+/// Returns the user-configured override when one has been set (see
+/// [`crate::installer::storage_path`]), otherwise the default `~/.skillhub/skills`.
+/// Every consumer — shared install, attach source roots, the `.skillhub` scan and
+/// repo uninstall — goes through this one function, so relocating the repository
+/// stays consistent across the whole desktop client.
+pub fn repo_root() -> PathBuf {
+    crate::installer::storage_path::configured_repo_root().unwrap_or_else(default_repo_root)
 }
 
 /// The shared repository directory for one skill: `~/.skillhub/skills/<slug>`.

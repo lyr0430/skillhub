@@ -1,7 +1,10 @@
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::installer::agents::{find_agent, resolve_agent_targets, skill_dir, AgentTarget};
+use crate::installer::agents::{
+    default_repo_root, find_agent, profile_root, repo_root, resolve_agent_targets, skill_dir,
+    AgentTarget, AGENT_PROFILES,
+};
 use crate::installer::attach::{attach_skill_to_agent, AttachResult};
 use crate::installer::homepage::validate_external_url;
 use crate::installer::install::{
@@ -12,6 +15,9 @@ use crate::installer::local_skills::{
     scan_local_skills, uninstall_location, uninstall_repo_skill, LocalSkill, UninstallRepoResult,
 };
 use crate::installer::metadata::{detect_status, SkillStatus};
+use crate::installer::storage_path::{
+    clear_skill_storage_path, migrate_repo_root, write_skill_storage_path, StorageMigration,
+};
 
 /// Result wrapper returned to the web view by commands.
 #[derive(Debug, Serialize)]
@@ -332,5 +338,88 @@ pub fn reveal_path(path: String) -> CommandResult<()> {
     match result {
         Ok(_) => CommandResult::success(()),
         Err(err) => CommandResult::failure(format!("打开文件管理器失败: {err}")),
+    }
+}
+
+/// Tauri command: report the current effective skill repository root.
+///
+/// This is the override when one has been set, else the default
+/// `~/.skillhub/skills`, computed by [`repo_root`] so the returned value is
+/// always the one the other commands will act on.
+#[tauri::command]
+pub fn get_skill_storage_path() -> CommandResult<String> {
+    CommandResult::success(repo_root().to_string_lossy().into_owned())
+}
+
+/// Tauri command: relocate the skill repository to `path` and re-point every
+/// agent symlink that pointed at the old location.
+///
+/// Runs the blocking move off the async executor. The config override is written
+/// only after the rename succeeds; a config write failure after a successful move
+/// is surfaced as a warning rather than silently leaving a stale path.
+#[tauri::command]
+pub async fn set_skill_storage_path(path: String) -> CommandResult<StorageMigration> {
+    let config_path = path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let to = Path::new(&path);
+        let from = repo_root();
+        let agent_roots: Vec<(String, PathBuf)> = AGENT_PROFILES
+            .iter()
+            .map(|profile| (profile.id.to_string(), profile_root(profile)))
+            .collect();
+        migrate_repo_root(&from, to, &agent_roots)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(mut migration)) => {
+            if let Err(err) = write_skill_storage_path(Path::new(&config_path)) {
+                migration.warnings.push(format!(
+                    "仓库已迁移，但保存配置失败，请重试设置路径: {}",
+                    err.message
+                ));
+            }
+            CommandResult::success(migration)
+        }
+        Ok(Err(err)) => CommandResult::failure(err.message),
+        Err(join_err) => CommandResult::failure(format!("迁移任务执行失败: {join_err}")),
+    }
+}
+
+/// Tauri command: relocate the skill repository back to the default
+/// `~/.skillhub/skills` and re-point every agent symlink.
+#[tauri::command]
+pub async fn reset_skill_storage_path() -> CommandResult<StorageMigration> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let from = repo_root();
+        let to = default_repo_root();
+        let agent_roots: Vec<(String, PathBuf)> = AGENT_PROFILES
+            .iter()
+            .map(|profile| (profile.id.to_string(), profile_root(profile)))
+            .collect();
+        if from == to {
+            return Ok(StorageMigration {
+                new_path: to.to_string_lossy().into_owned(),
+                moved_slugs: Vec::new(),
+                updated_links: Vec::new(),
+                warnings: Vec::new(),
+            });
+        }
+        migrate_repo_root(&from, &to, &agent_roots)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(mut migration)) => {
+            if let Err(err) = clear_skill_storage_path() {
+                migration.warnings.push(format!(
+                    "仓库已迁回默认，但清除配置失败: {}",
+                    err.message
+                ));
+            }
+            CommandResult::success(migration)
+        }
+        Ok(Err(err)) => CommandResult::failure(err.message),
+        Err(join_err) => CommandResult::failure(format!("恢复默认任务执行失败: {join_err}")),
     }
 }
