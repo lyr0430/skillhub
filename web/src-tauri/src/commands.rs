@@ -16,7 +16,8 @@ use crate::installer::local_skills::{
 };
 use crate::installer::metadata::{detect_status, SkillStatus};
 use crate::installer::storage_path::{
-    clear_skill_storage_path, migrate_repo_root, write_skill_storage_path, StorageMigration,
+    clear_skill_storage_path, empty_migration, migrate_repo_root, validate_migration_destination,
+    write_skill_storage_path, StorageMigration,
 };
 
 /// Result wrapper returned to the web view by commands.
@@ -357,23 +358,42 @@ pub fn get_skill_storage_path() -> CommandResult<String> {
 /// Runs the blocking move off the async executor. The config override is written
 /// only after the rename succeeds; a config write failure after a successful move
 /// is surfaced as a warning rather than silently leaving a stale path.
+///
+/// When the currently configured source is **gone** (lost disk, user-deleted
+/// directory), there is nothing to move — the command validates the chosen
+/// destination and records it as the new override, so the user is not stranded
+/// with an unrecoverable path.
 #[tauri::command]
 pub async fn set_skill_storage_path(path: String) -> CommandResult<StorageMigration> {
-    let config_path = path.clone();
+    let target = path.clone();
+    let target_for_closure = target.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let to = Path::new(&path);
+        let to = Path::new(&target_for_closure);
         let from = repo_root();
         let agent_roots: Vec<(String, PathBuf)> = AGENT_PROFILES
             .iter()
             .map(|profile| (profile.id.to_string(), profile_root(profile)))
             .collect();
-        migrate_repo_root(&from, to, &agent_roots)
+        // Recovery path: the source is gone, so only the destination checks make
+        // sense. Everything else validates and writes the override, accepting
+        // that no skills are moved (there are none to move).
+        if !from.is_dir() {
+            match validate_migration_destination(&from, to, &agent_roots) {
+                Ok(()) => Ok(empty_migration(to)),
+                Err(err) => Err(err),
+            }
+        } else {
+            migrate_repo_root(&from, to, &agent_roots)
+        }
     })
     .await;
 
     match result {
         Ok(Ok(mut migration)) => {
-            if let Err(err) = write_skill_storage_path(Path::new(&config_path)) {
+            let write_result = write_skill_storage_path(Path::new(&target));
+            // A no-op relocation (nothing moved) still records the override.
+            // A recovery relocation records it without having moved anything.
+            if let Err(err) = write_result {
                 migration.warnings.push(format!(
                     "仓库已迁移，但保存配置失败，请重试设置路径: {}",
                     err.message
@@ -388,6 +408,11 @@ pub async fn set_skill_storage_path(path: String) -> CommandResult<StorageMigrat
 
 /// Tauri command: relocate the skill repository back to the default
 /// `~/.skillhub/skills` and re-point every agent symlink.
+///
+/// When the currently configured source is **gone** (lost disk, user-deleted
+/// directory), nothing needs to move — the stale override is simply cleared so
+/// the repository falls back to the default. This is the recovery path for a
+/// configured path that no longer exists.
 #[tauri::command]
 pub async fn reset_skill_storage_path() -> CommandResult<StorageMigration> {
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -398,12 +423,12 @@ pub async fn reset_skill_storage_path() -> CommandResult<StorageMigration> {
             .map(|profile| (profile.id.to_string(), profile_root(profile)))
             .collect();
         if from == to {
-            return Ok(StorageMigration {
-                new_path: to.to_string_lossy().into_owned(),
-                moved_slugs: Vec::new(),
-                updated_links: Vec::new(),
-                warnings: Vec::new(),
-            });
+            return Ok(empty_migration(&to));
+        }
+        // Recovery path: a configured source that is no longer on disk. There is
+        // nothing to move; clearing the override is the whole job.
+        if !from.is_dir() {
+            return Ok(empty_migration(&to));
         }
         migrate_repo_root(&from, &to, &agent_roots)
     })
@@ -412,10 +437,9 @@ pub async fn reset_skill_storage_path() -> CommandResult<StorageMigration> {
     match result {
         Ok(Ok(mut migration)) => {
             if let Err(err) = clear_skill_storage_path() {
-                migration.warnings.push(format!(
-                    "仓库已迁回默认，但清除配置失败: {}",
-                    err.message
-                ));
+                migration
+                    .warnings
+                    .push(format!("仓库已迁回默认，但清除配置失败: {}", err.message));
             }
             CommandResult::success(migration)
         }

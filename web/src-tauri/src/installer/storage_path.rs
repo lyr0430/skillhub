@@ -76,10 +76,7 @@ pub fn write_skill_storage_path(path: &Path) -> Result<(), InstallError> {
 }
 
 /// [`write_skill_storage_path`] against an explicit config path, for tests.
-pub fn write_skill_storage_path_at(
-    config: &Path,
-    path: &Path,
-) -> Result<(), InstallError> {
+pub fn write_skill_storage_path_at(config: &Path, path: &Path) -> Result<(), InstallError> {
     let mut map = read_config_map_at(config);
     map.insert(
         "skillStoragePath".to_string(),
@@ -113,6 +110,19 @@ pub struct StorageMigration {
     pub updated_links: Vec<String>,
     /// Read failures and links that could not be re-pointed.
     pub warnings: Vec<String>,
+}
+
+/// A migration result for a repository root that cannot be relocated because it
+/// is no longer on disk (lost disk, user-deleted directory), or for a
+/// no-op reset. There is nothing to move or re-point; the caller may still want
+/// to move the config override.
+pub fn empty_migration(new_path: &Path) -> StorageMigration {
+    StorageMigration {
+        new_path: new_path.to_string_lossy().into_owned(),
+        moved_slugs: Vec::new(),
+        updated_links: Vec::new(),
+        warnings: Vec::new(),
+    }
 }
 
 /// True for a directory or a symlink, i.e. something that could be a skill entry.
@@ -155,40 +165,20 @@ fn within_root(path: &Path, root: &Path) -> bool {
     resolved(path).starts_with(root)
 }
 
-/// Relocate the repository `from` to `to`, re-pointing every agent symlink that
-/// waited on the old location.
+/// Validate a migration destination without requiring the source to exist.
 ///
-/// Operates on the **whole** repository root as one `rename`, so it is only
-/// supported when `to` is on the same filesystem as `from`. The caller supplies
-/// explicit paths and agent roots so a test can point this at a temp tree.
-///
-/// Semantics, in order:
-/// 1. **Pre-flight**: reject a non-existent source, a relative destination, the
-///    same path, a destination inside any agent skills root (the scan would then
-///    double-count it), a `to` nested inside `from`, and a **non-empty** `to`.
-///    Any failure aborts with nothing written.
-/// 2. **Discover** repo skill entries and, for each, the agent symlinks that
-///    resolve to it. This must happen **before** the rename: afterwards the old
-///    real directories no longer exist and cannot be canonicalized.
-/// 3. **Rename** the whole root; a cross-device move surfaces as a clear error.
-/// 4. **Re-point** each discovered link to the new location. A link that cannot
-///    be rewritten is reported as a warning rather than failing the whole move.
-pub fn migrate_repo_root(
+/// Used by the recovery path, where the configured source is gone (lost disk,
+/// user-deleted directory) but the user still wants to point the repository at a
+/// new location. The checks below do not depend on `from` being on disk, so they
+/// can run even when nothing is left to move. A `from` that does not exist is
+/// never itself an error here — [`migrate_repo_root`] rejects it first.
+pub fn validate_migration_destination(
     from: &Path,
     to: &Path,
     agent_roots: &[(String, PathBuf)],
-) -> Result<StorageMigration, InstallError> {
-    if !from.is_dir() {
-        return Err(InstallError::new(
-            "not_found",
-            format!("当前技能仓库不存在: {}", from.display()),
-        ));
-    }
+) -> Result<(), InstallError> {
     if !to.is_absolute() {
-        return Err(InstallError::new(
-            "invalid_path",
-            "目标路径必须为绝对路径",
-        ));
+        return Err(InstallError::new("invalid_path", "目标路径必须为绝对路径"));
     }
     if to == from {
         return Err(InstallError::new(
@@ -200,10 +190,7 @@ pub fn migrate_repo_root(
         if within_root(to, root) {
             return Err(InstallError::new(
                 "inside_agent_root",
-                format!(
-                    "目标路径不能位于 agent 技能目录内: {}",
-                    root.display()
-                ),
+                format!("目标路径不能位于 agent 技能目录内: {}", root.display()),
             ));
         }
     }
@@ -224,6 +211,39 @@ pub fn migrate_repo_root(
             ));
         }
     }
+    Ok(())
+}
+
+/// Relocate the repository `from` to `to`, re-pointing every agent symlink that
+/// waited on the old location.
+///
+/// Operates on the **whole** repository root as one `rename`, so it is only
+/// supported when `to` is on the same filesystem as `from`. The caller supplies
+/// explicit paths and agent roots so a test can point this at a temp tree.
+///
+/// Semantics, in order:
+/// 1. **Pre-flight**: reject a non-existent source. The destination checks
+///    (relative, same path, inside an agent skills root, nested in `from`,
+///    non-empty) live in [`validate_migration_destination`] and abort with
+///    nothing written.
+/// 2. **Discover** repo skill entries and, for each, the agent symlinks that
+///    resolve to it. This must happen **before** the rename: afterwards the old
+///    real directories no longer exist and cannot be canonicalized.
+/// 3. **Rename** the whole root; a cross-device move surfaces as a clear error.
+/// 4. **Re-point** each discovered link to the new location. A link that cannot
+///    be rewritten is reported as a warning rather than failing the whole move.
+pub fn migrate_repo_root(
+    from: &Path,
+    to: &Path,
+    agent_roots: &[(String, PathBuf)],
+) -> Result<StorageMigration, InstallError> {
+    if !from.is_dir() {
+        return Err(InstallError::new(
+            "not_found",
+            format!("当前技能仓库不存在: {}", from.display()),
+        ));
+    }
+    validate_migration_destination(from, to, agent_roots)?;
 
     // Enumerate the repo's skill entries (hidden and backup siblings are not
     // skills) so both the move result and the per-entry link discovery have a
@@ -249,8 +269,7 @@ pub fn migrate_repo_root(
     let mut warnings: Vec<String> = Vec::new();
     let mut links_by_slug: Vec<(String, Vec<PathBuf>)> = Vec::new();
     for slug in &slugs {
-        let (found, discovery_warnings) =
-            find_links_to_target_under(&from.join(slug), agent_roots);
+        let (found, discovery_warnings) = find_links_to_target_under(&from.join(slug), agent_roots);
         warnings.extend(discovery_warnings);
         links_by_slug.push((
             slug.clone(),
@@ -281,10 +300,25 @@ pub fn migrate_repo_root(
     // Re-point each discovered link. `create_link` refuses to displace an entry,
     // so the old link is removed first; it verifies the new source is a real
     // directory, which it is — the rename moved it.
+    //
+    // A repo entry that is itself a symlink (not a real directory) is the one
+    // exception: it points at a target **outside** the repository, the rename
+    // left that target where it was, and the agent links to it still resolve.
+    // Deleting and re-creating them against `to/<slug>` would fail (create_link
+    // refuses a symlink source) and strand the links the user already had, so
+    // for such an entry we leave the existing agent links alone.
     let mut updated_links: Vec<String> = Vec::new();
     for (slug, links) in &links_by_slug {
         let new_dir = to.join(slug);
+        let source_is_symlink = fs::symlink_metadata(&new_dir)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
         for link_path in links {
+            if source_is_symlink {
+                // The link already resolves to the real target, which did not
+                // move. Nothing to rewrite; keep it as-is.
+                continue;
+            }
             if let Err(err) = fs::remove_file(link_path) {
                 warnings.push(format!("移除旧链接失败: {}: {err}", link_path.display()));
                 continue;
