@@ -72,12 +72,7 @@ pub fn configured_repo_root_at(path: &Path) -> Option<PathBuf> {
 
 /// Persist a new repository root.
 pub fn write_skill_storage_path(path: &Path) -> Result<(), InstallError> {
-    let mut map = read_config_map_at(&config_path());
-    map.insert(
-        "skillStoragePath".to_string(),
-        serde_json::Value::String(path.to_string_lossy().into_owned()),
-    );
-    write_config_map_at(&config_path(), &map)
+    write_skill_storage_path_at(&config_path(), path)
 }
 
 /// [`write_skill_storage_path`] against an explicit config path, for tests.
@@ -96,9 +91,7 @@ pub fn write_skill_storage_path_at(
 /// Clear the override so [`crate::installer::agents::repo_root`] falls back to
 /// the default `~/.skillhub/skills`.
 pub fn clear_skill_storage_path() -> Result<(), InstallError> {
-    let mut map = read_config_map_at(&config_path());
-    map.remove("skillStoragePath");
-    write_config_map_at(&config_path(), &map)
+    clear_skill_storage_path_at(&config_path())
 }
 
 /// [`clear_skill_storage_path`] against an explicit config path, for tests.
