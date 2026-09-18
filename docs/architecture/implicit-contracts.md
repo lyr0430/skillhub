@@ -8,72 +8,24 @@
 
 ## 目录
 
-1. 身份主键约束（已冻结）
-2. 技能坐标体系（已冻结）
-3. slug 保留字
-4. 生命周期与状态机分离原则
-5. 提升（Promotion）唯一事实来源
-6. 并发约束落地（PostgreSQL）
-7. 幂等
-8. 鉴权分层
-9. 用户可见错误
-10. 客户端安装（桌面/Tauri）约定
+- 权威约束索引（§1–§9 已折叠，均为 `docs/00–05` 的既有规范，不在本文件重复正文）
+- 10. 客户端安装（桌面/Tauri）约定
 
-## 1. 身份主键约束（已冻结）
+## 权威约束索引
 
-- 用户身份主键**全链路统一使用 `string`**，禁止使用 `int` / `long` / `bigint` 作为平台用户标识的正式契约类型。
-- 覆盖认证主体、API 入参/出参、权限判定、审计、owner/creator/updater/reviewer/actor/submittedBy 等全部用户关联字段。
-- 原因：兼容外部 SSO / OAuth / OIDC / SCIM 身份源。
-- 若未来引入 surrogate key 作为内部索引，也只能是内部实现细节，**不能**替代字符串 `userId` 成为契约主键。
+> 以下内容是 `docs/00-product-direction.md`、`docs/02-domain-model.md`、`docs/03-authentication-design.md`、`docs/05-business-flows.md`、`docs/14-skill-lifecycle.md` 中**已冻结约束的定位索引**，不是本次变更的踩坑沉淀，本文件不再逐字重复正文。编辑时以对应权威文档为准；改动任一事实来源时必须同步索引指向，防止两份来源漂移。
 
-## 2. 技能坐标体系（已冻结）
-
-- skillhub 内部坐标：`@{namespace_slug}/{skill_slug}`。
-- ClawHub CLI 兼容层 canonical slug：`@global` → `{skill_slug}`；`@team-name` → `{namespace_slug}--{skill_slug}`。
-- 分隔符为**双连字符 `--`**；skill slug 与 namespace slug 均禁止包含 `--`。
-- 冲突规则：若 `@global/team-name--my-skill` 与 `@team-name/my-skill` 冲突，以 `--` 拆分优先。全局空间 skill slug 禁止含 `--`。
-- 显示：Web 端始终显示完整坐标；兼容层返回 canonical slug。
-
-## 3. slug 保留字
-
-namespace slug 不可使用保留字：`admin, api, dashboard, search, auth, me, global, system, static, assets, health`。
-`@global` 由 Flyway 预置，绕过 slug 校验；保留词校验仅作用于用户创建 namespace 的接口。
-
-## 4. 生命周期与状态机分离原则
-
-- **skill 容器 `status`**：只表达生命周期，不再承载"隐藏"语义。隐藏是独立治理覆盖层（`hidden` / `hidden_at` / `hidden_by`）。
-- **version `status`**：`PUBLISHED / PENDING_REVIEW / DRAFT / REJECTED / YANKED`。YANKED 版本号永久占用、不可复用、标记不可下载。
-- **review task `status`**：与 skill 容器、version 生命周期相分离。
-- 各状态机不互相耦合，改动一个生命周期字段时须确认不影响其他两层。
-
-## 5. 提升（Promotion）唯一事实来源
-
-- 提升关系唯一事实来源是 `promotion_request` 表。
-- "是否已提升"通过 `SELECT ... FROM promotion_request WHERE source_skill_id=? AND status='APPROVED'` 判定。
-- `skill` 表**不**冗余 `promoted_to_skill_id`。
-
-## 6. 并发约束落地（PostgreSQL）
-
-约束并发重复提交的典型方案（审核任务 / 提升申请）：
-- partial unique index：`CREATE UNIQUE INDEX ... WHERE status='PENDING'`；
-- 或 `deleted` 字段 + `(skill_version_id, deleted)` 唯一约束（撤回时 `deleted=id`）；
-- 或撤回时物理删除 + `(skill_version_id)` 唯一约束。
-
-## 7. 幂等
-
-- Redis 做快速去重（SETNX），PostgreSQL `idempotency_record` 做持久化兜底。
-- 写接口必须明确事务边界，禁止无条件全表更新/删除。
-
-## 8. 鉴权分层
-
-- namespace 权限由 `namespace_member.role`（OWNER / ADMIN / MEMBER）决定，**不**走 RBAC 表。
-- 平台级角色（SUPER_ADMIN / SKILL_ADMIN / USER_ADMIN / AUDITOR）走 RBAC。
-- 路由守卫按角色进行页面级控制（见前端架构）。
-
-## 9. 用户可见错误
-
-- 错误信息不得泄露敏感数据（内部异常、堆栈、SQL）。
-- 面向 UI 提供用户友好的错误消息。
+| 约束 | 要点 | 权威来源 |
+|------|------|---------|
+| 身份主键 | 全链路 `string`，禁 `int/long/bigint`；覆盖认证、API、权限、审计等全部用户关联字段 | `docs/00-product-direction.md`、`docs/02-domain-model.md` |
+| 技能坐标 | 内部 `@{namespace_slug}/{skill_slug}`；CLI canonical `@global`→`{skill_slug}`、`@team-name`→`{ns}--{slug}`；分隔符 `--` | `docs/00-product-direction.md`、`docs/02-domain-model.md` |
+| slug 保留字 | 保留词仅限用户创建 namespace；`@global` 由 Flyway 预置绕过 | `docs/02-domain-model.md` |
+| 生命周期/状态机分离 | skill 容器 `status` 不再承载隐藏；version `status` 五态；review task 独立；三者不耦合 | `docs/05-business-flows.md`、`docs/14-skill-lifecycle.md` |
+| 提升唯一事实来源 | `promotion_request` 表；`skill` 不冗余 `promoted_to_skill_id` | `docs/02-domain-model.md`、`docs/05-business-flows.md` |
+| 并发约束 | partial unique index / `deleted` 字段 / 撤回时物理删除，三选一 | `docs/02-domain-model.md`、`docs/05-business-flows.md` |
+| 幂等 | Redis SETNX + `idempotency_record` 兜底；写接口必须明确事务边界 | `docs/02-domain-model.md` |
+| 鉴权分层 | namespace 走 `namespace_member.role`；平台级角色走 RBAC；路由守卫页面级 | `docs/03-authentication-design.md` |
+| 用户可见错误 | 不泄露敏感数据；面向 UI 提供友好消息 | `docs/03-authentication-design.md`、`docs/07-skill-protocol.md` |
 
 ## 10. 客户端安装（桌面/Tauri）约定
 
@@ -89,6 +41,8 @@ namespace slug 不可使用保留字：`admin, api, dashboard, search, auth, me,
 - **Rust ↔ TypeScript 的 wire 字段名**：Rust 结构体上凡是多词字段，必须带 `#[serde(rename_all = "camelCase")]`。serde 静默忽略未知字段，字段名不一致不会报错，只会取 `#[serde(default)]` 的默认值——曾因此让「备份并安装」实际执行 `remove_dir_all`。
 - **路径来自前端时必须在 Rust 侧校验**：`install_skill` 与 `uninstall_skill_command` 的 `dir` 均来自 web view，两个入口必须对称地约束到 agent skill root 之内（只 `canonicalize` 父目录、叶子段按原样保留，按组件比较而非字符串前缀）。
 - **共享安装的目录布局**：真实文件在 `~/.skillhub/skills/<slug>/`，各 agent 目录下是指向它的软链接。该仓库与 CLI 的工作区文件 `~/.skillhub/namespace-sync.json` **不同层**——桌面端只写 `skills/` 子目录，不读不写 `namespace-sync.json`。`.skillhub` 在本仓库有三个含义（技能目录内的元数据目录、CLI 工作区根、共享仓库），改动任一含义前先确认没踩到另外两个。
+- **仓库根路径不再是硬编码常量**：`repo_root()` 会先读桌面端自己的配置覆盖值（`dirs::config_dir()/skillhub/desktop-config.json`，键 `skillStoragePath`），无覆盖时才回退 `~/.skillhub/skills`。该覆盖值**存在桌面端自己的配置目录，不是 `~/.skillhub` 内**，写回必须合并式（保留未知字段）——与 `metadata.json` 合并式写回同理。所有消费方（共享安装、attach 源根、`.skillhub` 扫描、仓库卸载）都经 `repo_root()` 取当前生效路径，改一处全链路一致；迁移仓库时先**在 rename 前**枚举旧根的软链接（rename 后旧路径已不可解析），再整库 rename、逐个重写链接，跨盘（`EXDEV`）直接报错，目标非空预检中止。
+- **`@tauri-apps/plugin-dialog` 的命令必须先在权限里授予**：`open` 命令需要 `dialog:allow-open`，`save` 需要 `dialog:allow-save`，二者独立，都必须在 `web/src-tauri/capabilities/default.json` 的 `permissions` 里声明，否则调用在 Tauri 侧被拒且**静默无反应**（前端若不 try/catch 则表现为「点按钮没反应」）。曾只授予 `dialog:allow-save`、用 `open` 选目录时确认按钮无响应。
 - **共享安装的写入目标恒为真实目录**：先落盘到仓库目录，**落盘成功后**再建链接。顺序反了（先建链接再落盘）会让 `swap_into_place` 的 `rename` 把链接换成真实目录，静默使其脱离目标——这正是问题 2 那两条不变量的成因。另：共享分支只在**全新安装**（无显式 `dir`）时生效；显式 `dir` 表示「更新既有条目」，必须继续走 `resolve_install_target` 的写穿链接契约。
 - **跨 agent 复用技能时，源目录在 agent root 之外**：把已有技能添加到其他 agent（`attach_skill_to_agent`）的源是技能真实目录，共享安装下即 `~/.skillhub/skills/<slug>`，**不落在任何 agent skills root 内**。因此源校验必须用「是不是技能目录」（`is_skill_package`，存在 `SKILL.md`），**不能**用 `ensure_under_agent_root`——后者会把共享安装产出的技能全部拒掉，而共享安装恰恰是这条命令的主要来源。目标侧仍是 agent root 下的条目，由 `agent_root.join(slug)` 构造。**但源必须落在这两类「合法技能家」之一**：共享仓库（`repo_root()`）或某 agent skills root（`skill_source_roots()` = 各 agent root + repo_root）。仅「含 SKILL.md」不够——否则一个 webview 可控的 `source_dir` 可指向机器上任意含 `SKILL.md` 的目录并把它链路/复制进 agent 根。位置校验在命令入口 `attach_skill_to_agent` 用 `assert_skill_source_within_roots`（复用 `ensure_under_roots` 的直接子目录规则），纯函数 `resolve_attach_source`/`attach_under` 保持可测（temp tree 源仍被接受）。
 - **`.skillhub` 是展示用合成扫描源，不是 agent**：`scan_local_skills()` 把 `repo_root()`（`~/.skillhub/skills/`）以合成 agent id `.skillhub`（`REPO_AGENT_ID`）追加为第六个扫描根，与 5 个 agent 平级，但**不进 `AGENT_PROFILES`**——因此不可选为安装目标、不出现在安装弹窗。它只出现在 `locations[].agent` 与前端分类筛选里。仓库项与 agent 链接**按 canonical 真实路径聚合**（复用 `aggregate()`），所以一个共享技能不会重复出卡：`.skillhub` location + 各 agent link 归并为**一个** `LocalSkill`，其派生字段 `repo_managed`（`locations` 含 `.skillhub`）与 `linked_agents`（其余指向它的 agent）在聚合末尾一次性算出。
@@ -109,4 +63,5 @@ namespace slug 不可使用保留字：`admin, api, dashboard, search, auth, me,
 - 客户端安装（桌面/Tauri）约定：从本变更 `client-skill-manage-20260911-01`、[`docs/07-skill-protocol.md`](../07-skill-protocol.md) 沉淀。
 - `metadata.json` 共享契约、软链接不变量、wire 字段名规则、前端传入路径的校验边界：从本变更 `local-skill-manage-20260915-01` 沉淀。
 - 共享仓库布局、共享安装的写入顺序与生效条件、attach 的源校验边界、Tauri 命令参数命名、顶栏禁用 portal：从本变更 `skill-install-mode-20260916-01` 沉淀。
+- 仓库根路径可配置（配置目录存储、迁移预检/跨盘限制）、`plugin-dialog` 权限声明：从本变更 `skill-storage-path-20260918-01` 沉淀。
 
