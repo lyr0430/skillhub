@@ -392,3 +392,69 @@ export async function listInstalledSkills(): Promise<LocalSkillsPayload | null> 
   }
   return result.data ?? { skills: [], warnings: [] }
 }
+
+/** Result of relocating the skill repository, from `set_skill_storage_path`. */
+export interface StorageMigrationResult {
+  ok: boolean
+  /** The new repository root (absolute). */
+  newPath: string
+  /** The skill directory names that were moved. */
+  movedSlugs: string[]
+  /** The agent symlinks that were re-pointed. */
+  updatedLinks: string[]
+  /** Read failures and links that could not be re-pointed. */
+  warnings: string[]
+}
+
+/**
+ * Read the current effective skill repository root via the Tauri shell.
+ * Returns `null` when not running inside the desktop app.
+ */
+export async function getSkillStoragePath(): Promise<string | null> {
+  const result =
+    await invokeTauri<CommandResult<string>>('get_skill_storage_path')
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '读取技能存储路径失败')
+  }
+  return result.data ?? null
+}
+
+/**
+ * Relocate the skill repository to `path` (the directory the user picked) and
+ * re-point every agent symlink, via the Tauri shell.
+ * Returns `null` when not running inside the desktop app.
+ */
+export async function setSkillStoragePath(
+  path: string,
+): Promise<StorageMigrationResult | null> {
+  const result = await invokeTauri<CommandResult<StorageMigrationResult>>(
+    'set_skill_storage_path',
+    { path },
+  )
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '迁移技能存储路径失败')
+  }
+  return result.data ?? { ok: false, newPath: '', movedSlugs: [], updatedLinks: [], warnings: [] }
+}
+
+/**
+ * Relocate the skill repository back to the default `~/.skillhub/skills`, via
+ * the Tauri shell. Returns `null` when not running inside the desktop app.
+ */
+export async function resetSkillStoragePath(): Promise<StorageMigrationResult | null> {
+  const result =
+    await invokeTauri<CommandResult<StorageMigrationResult>>('reset_skill_storage_path')
+  if (!result) {
+    return null
+  }
+  if (!result.ok) {
+    throw new Error(result.error ?? '恢复默认路径失败')
+  }
+  return result.data ?? { ok: false, newPath: '', movedSlugs: [], updatedLinks: [], warnings: [] }
+}

@@ -1,15 +1,30 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, SlidersHorizontal } from 'lucide-react'
+import { Check, FolderOpen, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogTitle,
 } from '@/shared/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/shared/ui/alert-dialog'
+import { Button } from '@/shared/ui/button'
+import { Input } from '@/shared/ui/input'
 import { cn } from '@/shared/lib/utils'
 import { useInstallMode } from '@/shared/hooks/use-install-mode'
 import type { InstallMode } from '@/shared/lib/install-mode'
+import {
+  getSkillStoragePath,
+  resetSkillStoragePath,
+  setSkillStoragePath,
+} from '@/features/skill/tauri-installer'
 
 /**
  * Left-hand menu entries.
@@ -208,15 +223,175 @@ function SkillSettings() {
             )
           })}
         </div>
+
+        {/* A plain caption, not a control. The boxed style above read as another
+            config item; this is a footnote the reader should glance past. */}
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground/80">
+          {t('settings.installMode.note')}
+        </p>
       </SettingsSection>
 
-      {/* Its own block, not a footnote inside the one above: this is what stops
-          the user from worrying that switching will move existing skills. */}
-      <SettingsSection title={t('settings.installMode.noteTitle')}>
-        <DialogDescription className="rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
-          {t('settings.installMode.note')}
-        </DialogDescription>
+      {/* Its own section, visually separated from install-mode: same page, but a
+          distinct feature. The divider and its own title make that explicit. */}
+      <SettingsSection
+        title={t('settings.storagePath.label')}
+        description={t('settings.storagePath.hint')}
+      >
+        <StoragePathControl />
       </SettingsSection>
+    </div>
+  )
+}
+
+/**
+ * The skill repository path control.
+ *
+ * A read-only input shows where the shared repository lives; the folder button
+ * relocates it. Relocation is destructive — it moves every skill and re-points
+ * every agent symlink — so it is preceded by a confirm dialog, then the native
+ * directory picker. `pendingAction` holds which action the confirm dialog is
+ * about to run, so a single dialog serves both "move to a new directory" and
+ * "restore the default".
+ */
+type StorageAction = 'pick' | 'reset'
+
+function StoragePathControl() {
+  const { t } = useTranslation()
+  const [currentPath, setCurrentPath] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [pendingAction, setPendingAction] = useState<StorageAction | null>(null)
+
+  useEffect(() => {
+    let active = true
+    getSkillStoragePath().then((value) => {
+      if (active && value) setCurrentPath(value)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const runMigration = async (action: StorageAction, target?: string) => {
+    setBusy(true)
+    setError(null)
+    setWarnings([])
+    try {
+      const result =
+        action === 'reset'
+          ? await resetSkillStoragePath()
+          : target
+            ? await setSkillStoragePath(target)
+            : null
+      if (!result) {
+        setError(t('settings.storagePath.error'))
+        return
+      }
+      if (result.newPath) setCurrentPath(result.newPath)
+      setWarnings(result.warnings ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.storagePath.error'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleConfirm = async () => {
+    const action = pendingAction
+    setPendingAction(null)
+    if (!action) return
+    if (action === 'reset') {
+      await runMigration('reset')
+      return
+    }
+    // The user already confirmed above; now the native directory picker opens,
+    // and only a real selection triggers the move.
+    const selected = await openDialog({ directory: true })
+    if (typeof selected !== 'string' || !selected) return
+    await runMigration('pick', selected)
+  }
+
+  const disabled = busy || !currentPath
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Input
+          readOnly
+          value={currentPath}
+          placeholder={t('settings.storagePath.placeholder')}
+          aria-label={t('settings.storagePath.label')}
+          data-testid="skill-storage-path-input"
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={disabled}
+          aria-label={t('settings.storagePath.pick')}
+          data-testid="skill-storage-path-pick"
+          onClick={() => setPendingAction('pick')}
+        >
+          <FolderOpen className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        data-testid="skill-storage-path-reset"
+        onClick={() => setPendingAction('reset')}
+      >
+        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+        {t('settings.storagePath.reset')}
+      </Button>
+
+      {busy ? (
+        <p className="text-xs text-muted-foreground">{t('settings.storagePath.loading')}</p>
+      ) : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {warnings.length > 0 ? (
+        <ul className="space-y-1 text-xs text-muted-foreground">
+          {warnings.map((warning, index) => (
+            <li key={index}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAction(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction === 'reset'
+                ? t('settings.storagePath.resetConfirmTitle')
+                : t('settings.storagePath.confirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction === 'reset'
+                ? t('settings.storagePath.resetConfirmBody')
+                : t('settings.storagePath.confirmBody')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="ghost"
+              data-testid="storage-confirm-cancel"
+              onClick={() => setPendingAction(null)}
+            >
+              {t('settings.storagePath.cancel')}
+            </Button>
+            <Button variant="default" data-testid="storage-confirm-ok" onClick={handleConfirm}>
+              {t('settings.storagePath.confirm')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

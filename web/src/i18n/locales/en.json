@@ -2185,8 +2185,22 @@
         "hint": "copy files into the agent",
         "desc": "Each agent keeps its own independent copy. Uses more disk space, and each one must be upgraded separately."
       },
-      "note": "Switching affects future installs only. Nothing already installed is changed, migrated or removed.",
-      "noteTitle": "Note"
+      "note": "Switching affects future installs only. Nothing already installed is changed, migrated or removed."
+    },
+    "storagePath": {
+      "label": "Skill storage path",
+      "hint": "Where the shared skill repository lives",
+      "placeholder": "Desktop client only",
+      "pick": "Choose a directory",
+      "reset": "Restore default path",
+      "confirmTitle": "Change skill storage path",
+      "confirmBody": "Changing the path moves every skill from the current directory into the chosen one. Continue?",
+      "resetConfirmTitle": "Restore default path",
+      "resetConfirmBody": "Restoring the default path moves every skill into ~/.skillhub/skills. Continue?",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "loading": "Migrating skills…",
+      "error": "Operation failed, please try again"
     }
   }
 }

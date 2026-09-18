@@ -1,12 +1,25 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { INSTALL_MODE_STORAGE_KEY } from '@/shared/lib/install-mode'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
+
+vi.mock('@/features/skill/tauri-installer', () => ({
+  getSkillStoragePath: vi.fn(),
+  setSkillStoragePath: vi.fn(),
+  resetSkillStoragePath: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  open: vi.fn(),
+}))
+
+import { getSkillStoragePath, resetSkillStoragePath, setSkillStoragePath } from '@/features/skill/tauri-installer'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
 import { SettingsDialog } from './settings-dialog'
 
@@ -16,6 +29,7 @@ describe('SettingsDialog', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    vi.mocked(getSkillStoragePath).mockResolvedValue('/default/skillhub/skills')
   })
 
   const renderOpen = (onOpenChange = vi.fn()) => {
@@ -96,5 +110,100 @@ describe('SettingsDialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('SettingsDialog storage path', () => {
+  afterEach(() => cleanup())
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.mocked(getSkillStoragePath).mockResolvedValue('/default/skillhub/skills')
+    vi.mocked(openDialog).mockReset()
+    vi.mocked(setSkillStoragePath).mockReset()
+    vi.mocked(resetSkillStoragePath).mockReset()
+  })
+
+  const renderOpen = () => render(<SettingsDialog open onOpenChange={vi.fn()} />)
+  const pathValue = () =>
+    (screen.getByTestId('skill-storage-path-input') as HTMLInputElement).value
+
+  it('shows the current storage path once loaded', async () => {
+    renderOpen()
+
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+  })
+
+  it('shows a confirm dialog before choosing a directory', async () => {
+    renderOpen()
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+
+    fireEvent.click(screen.getByTestId('skill-storage-path-pick'))
+
+    expect(screen.getByTestId('storage-confirm-ok')).toBeTruthy()
+    expect(openDialog).not.toHaveBeenCalled()
+  })
+
+  it('opens the directory picker and migrates after confirm', async () => {
+    vi.mocked(openDialog).mockResolvedValue('/new/repo')
+    vi.mocked(setSkillStoragePath).mockResolvedValue({
+      ok: true,
+      newPath: '/new/repo',
+      movedSlugs: ['alpha'],
+      updatedLinks: ['/tmp/agent/alpha'],
+      warnings: [],
+    })
+    renderOpen()
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+
+    fireEvent.click(screen.getByTestId('skill-storage-path-pick'))
+    fireEvent.click(screen.getByTestId('storage-confirm-ok'))
+
+    await waitFor(() => expect(openDialog).toHaveBeenCalledWith({ directory: true }))
+    await waitFor(() => expect(setSkillStoragePath).toHaveBeenCalledWith('/new/repo'))
+    await waitFor(() => expect(pathValue()).toBe('/new/repo'))
+  })
+
+  it('does nothing when the directory picker is cancelled', async () => {
+    vi.mocked(openDialog).mockResolvedValue(null)
+    renderOpen()
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+
+    fireEvent.click(screen.getByTestId('skill-storage-path-pick'))
+    fireEvent.click(screen.getByTestId('storage-confirm-ok'))
+
+    await waitFor(() => expect(openDialog).toHaveBeenCalled())
+    expect(setSkillStoragePath).not.toHaveBeenCalled()
+    expect(pathValue()).toBe('/default/skillhub/skills')
+  })
+
+  it('restores the default path after confirm', async () => {
+    vi.mocked(getSkillStoragePath).mockResolvedValue('/custom/repo')
+    vi.mocked(resetSkillStoragePath).mockResolvedValue({
+      ok: true,
+      newPath: '/default/skillhub/skills',
+      movedSlugs: ['alpha'],
+      updatedLinks: ['/tmp/agent/alpha'],
+      warnings: [],
+    })
+    renderOpen()
+    await waitFor(() => expect(pathValue()).toBe('/custom/repo'))
+
+    fireEvent.click(screen.getByTestId('skill-storage-path-reset'))
+    fireEvent.click(screen.getByTestId('storage-confirm-ok'))
+
+    await waitFor(() => expect(resetSkillStoragePath).toHaveBeenCalled())
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+  })
+
+  it('does not migrate on cancel', async () => {
+    renderOpen()
+    await waitFor(() => expect(pathValue()).toBe('/default/skillhub/skills'))
+
+    fireEvent.click(screen.getByTestId('skill-storage-path-pick'))
+    fireEvent.click(screen.getByTestId('storage-confirm-cancel'))
+
+    expect(openDialog).not.toHaveBeenCalled()
+    expect(setSkillStoragePath).not.toHaveBeenCalled()
   })
 })

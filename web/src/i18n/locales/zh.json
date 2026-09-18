@@ -2184,8 +2184,22 @@
         "hint": "复制文件到 Agent",
         "desc": "每个 Agent 各存一份独立副本，互不影响。占用空间更多，升级需逐个进行。"
       },
-      "note": "切换只影响后续安装，不改动、不迁移、不删除任何已安装的技能。",
-      "noteTitle": "注意"
+      "note": "切换只影响后续安装，不改动、不迁移、不删除任何已安装的技能。"
+    },
+    "storagePath": {
+      "label": "技能存储路径",
+      "hint": "共享技能仓库所在目录",
+      "placeholder": "仅桌面端可用",
+      "pick": "选择目录",
+      "reset": "恢复默认路径",
+      "confirmTitle": "修改技能存储路径",
+      "confirmBody": "修改技能存储路径会把当前路径的技能都移动到修改后的目录，是否要继续？",
+      "resetConfirmTitle": "恢复默认路径",
+      "resetConfirmBody": "恢复默认路径会把当前路径的技能都移动到默认目录 ~/.skillhub/skills，是否要继续？",
+      "confirm": "确认",
+      "cancel": "取消",
+      "loading": "正在迁移技能…",
+      "error": "操作失败，请重试"
     }
   }
 }

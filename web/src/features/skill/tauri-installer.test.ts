@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloadSkillZip, revealInFileManager } from './tauri-installer'
+import {
+  downloadSkillZip,
+  getSkillStoragePath,
+  resetSkillStoragePath,
+  revealInFileManager,
+  setSkillStoragePath,
+} from './tauri-installer'
 
 const hoisted = vi.hoisted(() => {
   const calls: Array<{ cmd: string; args?: Record<string, unknown> }> = []
@@ -84,5 +90,72 @@ describe('revealInFileManager', () => {
     hoisted.setResult({ ok: false, error: '打开文件管理器失败', data: undefined })
 
     await expect(revealInFileManager('/Downloads/x.zip')).rejects.toThrow('打开文件管理器失败')
+  })
+})
+
+describe('skill storage path commands', () => {
+  beforeEach(() => {
+    hoisted.calls.length = 0
+  })
+
+  it('reads the current storage path', async () => {
+    hoisted.setResult({ ok: true, data: '/default/skillhub/skills' })
+
+    const path = await getSkillStoragePath()
+
+    expect(path).toBe('/default/skillhub/skills')
+    expect(hoisted.calls).toEqual([{ cmd: 'get_skill_storage_path' }])
+  })
+
+  it('relocates the repository via set_skill_storage_path', async () => {
+    hoisted.setResult({
+      ok: true,
+      data: {
+        ok: true,
+        newPath: '/new/repo',
+        movedSlugs: ['alpha'],
+        updatedLinks: [],
+        warnings: [],
+      },
+    })
+
+    const result = await setSkillStoragePath('/new/repo')
+
+    expect(result?.newPath).toBe('/new/repo')
+    expect(hoisted.calls).toEqual([
+      { cmd: 'set_skill_storage_path', args: { path: '/new/repo' } },
+    ])
+  })
+
+  it('restores the default path', async () => {
+    hoisted.setResult({
+      ok: true,
+      data: {
+        ok: true,
+        newPath: '/default/skillhub/skills',
+        movedSlugs: [],
+        updatedLinks: [],
+        warnings: [],
+      },
+    })
+
+    const result = await resetSkillStoragePath()
+
+    expect(result?.newPath).toBe('/default/skillhub/skills')
+    expect(hoisted.calls).toEqual([{ cmd: 'reset_skill_storage_path' }])
+  })
+
+  it('throws on a command-reported error', async () => {
+    hoisted.setResult({ ok: false, error: '迁移技能存储路径失败', data: undefined })
+
+    await expect(setSkillStoragePath('/x')).rejects.toThrow('迁移技能存储路径失败')
+  })
+
+  it('returns null when not running inside the desktop app', async () => {
+    hoisted.setResult(null)
+
+    await expect(getSkillStoragePath()).resolves.toBeNull()
+    await expect(setSkillStoragePath('/x')).resolves.toBeNull()
+    await expect(resetSkillStoragePath()).resolves.toBeNull()
   })
 })
